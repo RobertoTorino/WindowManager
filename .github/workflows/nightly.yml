@@ -1,0 +1,145 @@
+name: Nightly / Beta Build
+
+on:
+  push:
+    tags:
+      - "test-v*" 
+    branches:
+      - develop # Auto-nightly on every push to dev
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+          submodules: recursive # Fixes the empty dependency folders!
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Set up Qt
+        uses: jurplel/install-qt-action@v3
+        with:
+          version: "6.10.2"
+          arch: "win64_msvc2022_64"
+
+      # --- Build Qt GUI version ---
+      - name: Configure CMake (Qt GUI)
+        run: >
+          cmake -S . -B build-qt -G "Ninja Multi-Config" -DCMAKE_BUILD_TYPE=Release -DENABLE_QT_GUI=ON
+
+      - name: Build Qt GUI (Release)
+        run: >
+          cmake --build build-qt --config Release --target WindowManager
+
+      - name: Deploy Qt DLLs
+        run: windeployqt6 build-qt\Release\WindowManager-qt.exe
+
+      # --- Build CLI version ---
+      - name: Configure CMake (CLI)
+        run: >
+          cmake -S . -B build-cli -G "Ninja Multi-Config" -DCMAKE_BUILD_TYPE=Release -DENABLE_QT_GUI=OFF
+
+      - name: Build CLI (Release)
+        run: >
+          cmake --build build-cli --config Release --target WindowManager
+
+      # --- Generate Auto-Tag with Date & Time ---
+      - name: Set nightly tag and name
+        id: nightly_meta
+        shell: pwsh
+        run: |
+          # 1. Read the base version from CMakeLists.txt
+          $cmakeText = Get-Content -Path "CMakeLists.txt" -Raw
+          if ($cmakeText -match 'set\(\s*APP_VERSION\s+"([^"]+)"\s*\)') {
+              $baseVersion = $matches[1]
+          } else {
+              Write-Error "Could not find APP_VERSION in CMakeLists.txt"
+              exit 1
+          }
+
+          # 2. Get the current date and time
+          $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+
+          # 3. Combine them into the final tag and release name
+          $tag = "v$baseVersion-nightly-$timestamp"
+          $name = "Nightly v$baseVersion ($timestamp)"
+          
+          echo "tag=$tag" >> $env:GITHUB_OUTPUT
+          echo "name=$name" >> $env:GITHUB_OUTPUT
+
+      # --- Package and Release ---
+      - name: Package Artifacts
+        shell: pwsh
+        env:
+          NIGHTLY_TAG: ${{ steps.nightly_meta.outputs.tag }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = "$env:GITHUB_WORKSPACE"
+          
+          $qtDir = Join-Path $root 'build-qt\Release'
+          $cliDir = Join-Path $root 'build-cli\Release'
+          $outDir = Join-Path $root "WindowManager-nightly"
+          
+          New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+          
+          # Qt GUI files
+          Copy-Item "$qtDir\WindowManager-Qt.exe" $outDir -Force
+          Copy-Item "$qtDir\*.dll" $outDir -Force
+
+          # Qt platforms directory (for qwindows.dll)
+          if (Test-Path "$qtDir\platforms") {
+            Copy-Item "$qtDir\platforms" $outDir -Recurse -Force
+          }
+          
+          # CLI files
+          Copy-Item "$cliDir\WindowManager-cli.exe" $outDir -Force
+          
+          # Common files
+          Copy-Item "$root\README.md" $outDir -Force
+          Copy-Item "$root\LICENSE*" $outDir -Force
+          
+          # Compress to ZIP
+          $zip = "$root\WindowManager-$env:NIGHTLY_TAG.zip"
+          Compress-Archive -Path "$outDir\*" -DestinationPath $zip -Force
+          
+          # Generate SHA256 hashes for BOTH executables
+          $hashQt = (Get-FileHash "$outDir\WindowManager-qt.exe" -Algorithm SHA256).Hash.ToUpper()
+          $hashCli = (Get-FileHash "$outDir\WindowManager-cli.exe" -Algorithm SHA256).Hash.ToUpper()
+          Set-Content -Path "$root\WindowManager-$env:NIGHTLY_TAG.sha256" -Value @(
+            "$hashQt WindowManager-qt.exe"
+            "$hashCli WindowManager-cli.exe"
+          )
+
+      - name: Create GitHub Pre-Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.nightly_meta.outputs.tag }}
+          name: ${{ steps.nightly_meta.outputs.name }}
+          body: |
+            **Beta / Nightly build** — use at your own risk.
+            
+            Download and extract the ZIP before running WindowManager.
+            Verify the SHA256 checksums with the included .sha256 file.
+          files: |
+            WindowManager-*.zip
+            WindowManager-*.sha256
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate SLSA Provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: WindowManager-*.zip
+          

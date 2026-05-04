@@ -1,0 +1,187 @@
+# Stable Release Workflow for WindowManager (C++/Qt)
+# Triggers automatically on push/merge to the 'main' branch
+
+name: CI Build and Release
+
+on:
+  push:
+    branches:
+      - main # Changed from tags to the main branch
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+          submodules: recursive
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Set up Qt
+        uses: jurplel/install-qt-action@v3
+        with:
+          version: "6.10.2"
+          arch: "win64_msvc2022_64"
+
+      # --- Build Qt GUI version ---
+      - name: Configure CMake (Qt GUI)
+        run: >
+          cmake -S . -B build-qt -G "Ninja Multi-Config" -DCMAKE_BUILD_TYPE=Release -DENABLE_QT_GUI=ON
+
+      - name: Build Qt GUI (Release)
+        run: >
+          cmake --build build-qt --config Release --target WindowManager
+
+      - name: Deploy Qt DLLs
+        run: windeployqt6 build-qt\Release\WindowManager-qt.exe
+
+      # --- Build CLI version ---
+      - name: Configure CMake (CLI)
+        run: >
+          cmake -S . -B build-cli -G "Ninja Multi-Config" -DCMAKE_BUILD_TYPE=Release -DENABLE_QT_GUI=OFF
+
+      - name: Build CLI (Release)
+        run: >
+          cmake --build build-cli --config Release --target WindowManager
+
+      # --- Generate Auto-Tag from CMakeLists.txt ---
+      - name: Generate Version Tag
+        id: version_meta
+        shell: pwsh
+        run: |
+          # 1. Read the entire CMakeLists.txt file
+          $cmakeText = Get-Content -Path "CMakeLists.txt" -Raw
+          
+          # 2. Use a Regular Expression to find 'set(APP_VERSION "X.Y.Z")'
+          if ($cmakeText -match 'set\(\s*APP_VERSION\s+"([^"]+)"\s*\)') {
+              $baseVersion = $matches[1]
+          } else {
+              Write-Error "Could not find APP_VERSION in CMakeLists.txt"
+              exit 1
+          }
+
+          # 3. Combine base version with GitHub run number (e.g., v0.12.0-b42)
+          # Using '-b' to clearly separate your base version from the build number
+          $tag = "v$baseVersion"
+          
+          # Print out for the logs so you can see it worked
+          echo "Extracted Base Version: $baseVersion"
+          echo "Generated Tag: $tag"
+          
+          # Pass the tag to the next steps
+          echo "tag=$tag" >> $env:GITHUB_OUTPUT
+
+      # --- Package and Release ---
+      - name: Package Artifacts
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ steps.version_meta.outputs.tag }} # Pulls the tag generated above
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = "$env:GITHUB_WORKSPACE"
+          
+          $qtDir = Join-Path $root 'build-qt\Release'
+          $cliDir = Join-Path $root 'build-cli\Release'
+          $outDir = Join-Path $root "WindowManager-release"
+          
+          New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+          
+          # Qt GUI files
+          Copy-Item "$qtDir\WindowManager-qt.exe" $outDir -Force
+          Copy-Item "$qtDir\*.dll" $outDir -Force
+
+          # Qt platforms directory (for qwindows.dll)
+          if (Test-Path "$qtDir\platforms") {
+            Copy-Item "$qtDir\platforms" $outDir -Recurse -Force
+          }
+          
+          # CLI files
+          Copy-Item "$cliDir\WindowManager-cli.exe" $outDir -Force
+          
+          # Common files
+          Copy-Item "$root\README.md" $outDir -Force
+          Copy-Item "$root\LICENSE*" $outDir -Force
+          
+          # Compress to ZIP using the new auto-tag
+          $zip = "$root\WindowManager-$env:RELEASE_TAG.zip"
+          Compress-Archive -Path "$outDir\*" -DestinationPath $zip -Force
+          
+          # Generate SHA256 hashes
+          $hashQt = (Get-FileHash "$outDir\WindowManager-qt.exe" -Algorithm SHA256).Hash.ToUpper()
+          $hashCli = (Get-FileHash "$outDir\WindowManager-cli.exe" -Algorithm SHA256).Hash.ToUpper()
+          Set-Content -Path "$root\WindowManager-$env:RELEASE_TAG.sha256" -Value @(
+            "$hashQt  WindowManager-qt.exe"
+            "$hashCli  WindowManager-cli.exe"
+          )
+
+
+      # --- Auto Version Bump (commit message) ---
+      - name: Auto Version Bump (commit message)
+        if: github.ref == 'refs/heads/main'
+        shell: pwsh
+        run: |
+          $file = "CMakeLists.txt"
+          $text = Get-Content $file -Raw
+          $commitMsg = git log -1 --pretty=%B
+          if ($text -match 'set\(APP_VERSION\s+"(\d+)\.(\d+)\.(\d+)"\)') {
+            $major = [int]$matches[1]
+            $minor = [int]$matches[2]
+            $patch = [int]$matches[3]
+            if ($commitMsg -match 'BREAKING CHANGE|!') {
+              $major++
+              $minor = 0
+              $patch = 0
+              $bumpType = 'major'
+            } elseif ($commitMsg -match 'feat:') {
+              $minor++
+              $patch = 0
+              $bumpType = 'minor'
+            } else {
+              $patch++
+              $bumpType = 'patch'
+            }
+            $newVersion = "set(APP_VERSION \"$major.$minor.$patch\")"
+            $text = [regex]::Replace($text, 'set\(APP_VERSION\s+"\d+\.\d+\.\d+"\)', $newVersion)
+            Set-Content $file $text
+            git config user.name "github-actions"
+            git config user.email "github-actions@github.com"
+            git add $file
+            git commit -m "ci: bump $bumpType version to $major.$minor.$patch [skip ci]"
+            git push
+          } else {
+            Write-Error "APP_VERSION not found in CMakeLists.txt"
+            exit 1
+          }
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version_meta.outputs.tag }}
+          name: Release ${{ steps.version_meta.outputs.tag }}
+          body: |
+            Automated stable release.
+            
+            Download and extract the ZIP before running WindowManager.
+            Verify the SHA256 checksum with the included .sha256 file.
+          files: |
+            WindowManager-*.zip
+            WindowManager-*.sha256
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate SLSA Provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: WindowManager-*.zip
+          

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 # Single source of truth for version — workflows read this with a regex
-set(APP_VERSION "0.1.1")
+set(APP_VERSION "0.1.2")
 
 project(WindowManager VERSION ${APP_VERSION} LANGUAGES CXX)
 
@@ -75,3 +75,4 @@ install(TARGETS WindowManager
     BUNDLE DESTINATION .
     RUNTIME DESTINATION bin
 )
+

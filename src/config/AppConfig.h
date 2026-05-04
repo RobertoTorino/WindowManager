@@ -29,6 +29,7 @@ public:
 
     bool load();
     bool save();
+    QString configPath() const;
 
     // Currently selected target executable
     QString currentExePath() const;

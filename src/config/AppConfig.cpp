@@ -107,6 +107,11 @@ bool AppConfig::save()
     return true;
 }
 
+QString AppConfig::configPath() const
+{
+    return configFilePath();
+}
+
 // ---------------------------------------------------------------------------
 // Target exe
 // ---------------------------------------------------------------------------

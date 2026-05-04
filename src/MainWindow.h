@@ -19,7 +19,7 @@ private:
     void buildUi();
     void refreshStatus();
     void refreshWindowTable();
-        void moveAppToOppositeMonitor();
+    void moveAppToOppositeMonitor();
 
     WindowManagerController *m_controller;
 
@@ -30,8 +30,9 @@ private:
     QPushButton *m_launchButton;
     QPushButton *m_stabilizerButton;
     QPushButton *m_killButton;
-        QPushButton *m_focusButton;
-        QPushButton *m_moveAppButton;
+    QPushButton *m_focusButton;
+    QPushButton *m_viewConfigButton;
+    QPushButton *m_moveAppButton;
 
     // Row 1 (under table): state
     QPushButton *m_destroyButton;
@@ -101,6 +102,8 @@ private:
     QPushButton *m_bl1440pButton;
     QPushButton *m_ffs1440pButton;
     QPushButton *m_ffsa1440pButton;
+    QPushButton *m_infoButton;
+    QPushButton *m_aboutButton;
 
     // Bottom row
     QPushButton *m_monitor1Button;

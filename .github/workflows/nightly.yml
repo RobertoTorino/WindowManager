@@ -33,26 +33,17 @@ jobs:
           version: "6.10.2"
           arch: "win64_msvc2022_64"
 
-      # --- Build Qt GUI version ---
-      - name: Configure CMake (Qt GUI)
+      # --- Build ---
+      - name: Configure CMake
         run: >
-          cmake -S . -B build-qt -G "Ninja Multi-Config" -DCMAKE_BUILD_TYPE=Release -DENABLE_QT_GUI=ON
+          cmake -S . -B build -G "Ninja Multi-Config"
 
-      - name: Build Qt GUI (Release)
+      - name: Build (Release)
         run: >
-          cmake --build build-qt --config Release --target WindowManager
+          cmake --build build --config Release --target WindowManager
 
       - name: Deploy Qt DLLs
-        run: windeployqt6 build-qt\Release\WindowManager-qt.exe
-
-      # --- Build CLI version ---
-      - name: Configure CMake (CLI)
-        run: >
-          cmake -S . -B build-cli -G "Ninja Multi-Config" -DCMAKE_BUILD_TYPE=Release -DENABLE_QT_GUI=OFF
-
-      - name: Build CLI (Release)
-        run: >
-          cmake --build build-cli --config Release --target WindowManager
+        run: windeployqt6 build\Release\WindowManager.exe
 
       # --- Generate Auto-Tag with Date & Time ---
       - name: Set nightly tag and name
@@ -87,23 +78,19 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $root = "$env:GITHUB_WORKSPACE"
           
-          $qtDir = Join-Path $root 'build-qt\Release'
-          $cliDir = Join-Path $root 'build-cli\Release'
-          $outDir = Join-Path $root "WindowManager-nightly"
+          $buildDir = Join-Path $root 'build\Release'
+          $outDir   = Join-Path $root "WindowManager-nightly"
           
           New-Item -ItemType Directory -Path $outDir -Force | Out-Null
           
-          # Qt GUI files
-          Copy-Item "$qtDir\WindowManager-Qt.exe" $outDir -Force
-          Copy-Item "$qtDir\*.dll" $outDir -Force
-
+          # Executable
+          Copy-Item "$buildDir\WindowManager.exe" $outDir -Force
+          # Qt runtime DLLs deployed by windeployqt6
+          Copy-Item "$buildDir\*.dll" $outDir -Force
           # Qt platforms directory (for qwindows.dll)
-          if (Test-Path "$qtDir\platforms") {
-            Copy-Item "$qtDir\platforms" $outDir -Recurse -Force
+          if (Test-Path "$buildDir\platforms") {
+            Copy-Item "$buildDir\platforms" $outDir -Recurse -Force
           }
-          
-          # CLI files
-          Copy-Item "$cliDir\WindowManager-cli.exe" $outDir -Force
           
           # Common files
           Copy-Item "$root\README.md" $outDir -Force
@@ -113,13 +100,9 @@ jobs:
           $zip = "$root\WindowManager-$env:NIGHTLY_TAG.zip"
           Compress-Archive -Path "$outDir\*" -DestinationPath $zip -Force
           
-          # Generate SHA256 hashes for BOTH executables
-          $hashQt = (Get-FileHash "$outDir\WindowManager-qt.exe" -Algorithm SHA256).Hash.ToUpper()
-          $hashCli = (Get-FileHash "$outDir\WindowManager-cli.exe" -Algorithm SHA256).Hash.ToUpper()
-          Set-Content -Path "$root\WindowManager-$env:NIGHTLY_TAG.sha256" -Value @(
-            "$hashQt WindowManager-qt.exe"
-            "$hashCli WindowManager-cli.exe"
-          )
+          # SHA256 checksum (two-space separator matches sha256sum standard)
+          $hash = (Get-FileHash "$outDir\WindowManager.exe" -Algorithm SHA256).Hash.ToUpper()
+          Set-Content -Path "$root\WindowManager-$env:NIGHTLY_TAG.sha256" -Value "$hash  WindowManager.exe"
 
       - name: Create GitHub Pre-Release
         uses: softprops/action-gh-release@v2

@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(WindowManager VERSION 0.1.0 LANGUAGES CXX)
+# Single source of truth for version — workflows read this with a regex
+set(APP_VERSION "0.1.0")
+
+project(WindowManager VERSION ${APP_VERSION} LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

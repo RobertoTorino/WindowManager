@@ -133,7 +133,7 @@ jobs:
               $patch++
               $bumpType = 'patch'
             }
-            $newVersion = "set(APP_VERSION \"$major.$minor.$patch\")"
+            $newVersion = 'set(APP_VERSION "{0}.{1}.{2}")' -f $major, $minor, $patch
             $text = [regex]::Replace($text, 'set\(APP_VERSION\s+"\d+\.\d+\.\d+"\)', $newVersion)
             Set-Content $file $text
             git config user.name "github-actions"

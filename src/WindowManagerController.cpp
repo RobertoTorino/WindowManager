@@ -1,6 +1,7 @@
 #include "WindowManagerController.h"
 
 #include "config/AppConfig.h"
+#include "core/Logger.h"
 
 WindowManagerController::WindowManagerController(QObject *parent)
     : QObject(parent)
@@ -9,8 +10,13 @@ WindowManagerController::WindowManagerController(QObject *parent)
     AppConfig::instance().load();
     const QString lastExe = AppConfig::instance().currentExePath();
     if (!lastExe.isEmpty()) {
+        Logger::instance().info(
+            "Restoring last executable: " + lastExe.toStdString(),
+            "WindowManagerController");
         m_windowManager.setTargetExecutable(lastExe);
         m_statusText = "Ready. Loaded last selected executable.";
+    } else {
+        Logger::instance().info("No previous executable in config", "WindowManagerController");
     }
 }
 
@@ -41,6 +47,8 @@ const std::vector<WindowManager::WindowInfo>& WindowManagerController::scannedWi
 
 void WindowManagerController::setTargetExecutable(const QString& exePath)
 {
+    Logger::instance().info(
+        "setTargetExecutable: " + exePath.toStdString(), "WindowManagerController");
     m_windowManager.setTargetExecutable(exePath);
     // Auto-scan so the table populates immediately if the game is already running
     const bool found = m_windowManager.scanWindowsForTarget();
@@ -300,6 +308,7 @@ int WindowManagerController::activeWindowMonitorIndex() const
 
 void WindowManagerController::killTarget()
 {
+    Logger::instance().info("killTarget requested", "WindowManagerController");
     m_stabilizer.stop();
     m_stabilizer.clearTrackedWindow();
     publishStatus(m_windowManager.killTarget() ? "Processes killed" : "Kill failed (nothing found)");

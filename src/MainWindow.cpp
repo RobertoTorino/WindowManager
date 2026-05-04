@@ -145,6 +145,8 @@ MainWindow::MainWindow(QWidget *parent)
     , m_monitor1Button(nullptr)
     , m_monitor2Button(nullptr)
     , m_resetAllButton(nullptr)
+    , m_statusExeLabel(nullptr)
+    , m_statusDetailLabel(nullptr)
 {
     buildUi();
     refreshStatus();
@@ -364,7 +366,8 @@ void MainWindow::buildUi()
 {
     setWindowTitle(QString("WindowManager - %1").arg(buildTimestamp()));
     setWindowIcon(QIcon(":/window-manager-icon.png"));
-    setFixedSize(800, 540);
+    setFixedSize(800, 556);
+    statusBar()->hide();
 
     auto* monitorToggleShortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_S), this);
     connect(monitorToggleShortcut, &QShortcut::activated, this, [this]() {
@@ -671,8 +674,19 @@ void MainWindow::buildUi()
     mainLayout->addLayout(row7);
     mainLayout->addLayout(row8);
 
+    // ── Two-line status area ───────────────────────────────────────────────
+    const QString statusStyle =
+        "QLabel { background:#1a1a1a; color:#cccccc; padding:2px 4px; font-size:11px; }";
+    m_statusExeLabel    = new QLabel("Target EXE: <none>", central);
+    m_statusDetailLabel = new QLabel("Ready.",              central);
+    m_statusExeLabel->setStyleSheet(statusStyle);
+    m_statusDetailLabel->setStyleSheet(statusStyle);
+    m_statusExeLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_statusDetailLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    mainLayout->addWidget(m_statusExeLabel);
+    mainLayout->addWidget(m_statusDetailLabel);
+
     setCentralWidget(central);
-    statusBar()->showMessage("Ready.");
 }
 
 void MainWindow::refreshStatus()
@@ -681,15 +695,26 @@ void MainWindow::refreshStatus()
     const QString exe = m_controller->targetExecutable().isEmpty()
         ? QString("<none>")
         : m_controller->targetExecutable();
-    statusBar()->showMessage(QString("Target EXE: %1 | %2").arg(exe, m_controller->statusText()));
+    m_statusExeLabel->setText(QString("Target EXE: %1").arg(exe));
+    m_statusDetailLabel->setText(m_controller->statusText());
     refreshWindowTable();
 }
 
 void MainWindow::refreshWindowTable()
 {
+    // Guard against re-entrant calls: selectRow() → currentRowChanged → setActiveWindow
+    // → publishStatus → statusChanged → refreshStatus → here. Without this guard the
+    // recursion corrupts Qt's internal QList and triggers the QList::at assert.
+    if (m_refreshingTable) return;
+    m_refreshingTable = true;
+
     const auto& windows   = m_controller->scannedWindows();
     const quintptr activeHwnd = m_controller->activeWindow();
-    m_windowTable->blockSignals(true);
+
+    // Clear the selection BEFORE changing the row count. If a row that is currently
+    // selected is about to be removed, QItemSelectionModel::rowsAboutToBeRemoved will
+    // iterate its persistent-index list and can hit an out-of-bounds QList::at assert.
+    m_windowTable->clearSelection();
     m_windowTable->setRowCount(static_cast<int>(windows.size()));
 
     int selectRow = -1;
@@ -724,12 +749,12 @@ void MainWindow::refreshWindowTable()
             selectRow = i;
     }
 
-    m_windowTable->blockSignals(false);
-
     if (selectRow >= 0)
         m_windowTable->selectRow(selectRow);
     else
         m_windowTable->clearSelection();
+
+    m_refreshingTable = false;
 }
 
 void MainWindow::moveAppToOppositeMonitor()

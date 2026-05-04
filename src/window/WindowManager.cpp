@@ -116,6 +116,8 @@ BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam)
 
 void WindowManager::setTargetExecutable(const QString& exePath)
 {
+    Logger::instance().info(
+        "Target executable set: " + exePath.toStdString(), "WindowManager");
     m_targetExePath = exePath;
     AppConfig::instance().setCurrentExePath(exePath);
     AppConfig::instance().save();
@@ -143,8 +145,12 @@ bool WindowManager::scanWindowsForTarget()
 
     if (m_targetExePath.trimmed().isEmpty()) {
         m_lastMessage = "No executable selected.";
+        Logger::instance().warn("Scan aborted: no executable selected", "WindowManager");
         return false;
     }
+
+    Logger::instance().info(
+        "Scanning windows for: " + m_targetExePath.toStdString(), "WindowManager");
 
     ScanContext ctx;
     ctx.targetPathLower = m_targetExePath.toLower();
@@ -161,10 +167,14 @@ bool WindowManager::scanWindowsForTarget()
     if (!m_scanned.empty()) {
         m_activeWindow = m_scanned.front().hwnd;
         m_lastMessage = QString("Found %1 window(s) for target executable.").arg(m_scanned.size());
+        Logger::instance().info(
+            "Scan found " + std::to_string(m_scanned.size()) + " window(s). Active HWND: " +
+            std::to_string(m_activeWindow), "WindowManager");
         return true;
     }
 
     m_lastMessage = "No matching top-level window was found.";
+    Logger::instance().warn("Scan complete: no matching windows found", "WindowManager");
     return false;
 }
 
@@ -174,11 +184,13 @@ bool WindowManager::ensureActiveWindow()
         return true;
     }
 
+    Logger::instance().info("Active window stale or missing; re-scanning", "WindowManager");
     if (scanWindowsForTarget() && m_activeWindow) {
         return true;
     }
 
     m_lastMessage = "No active window available.";
+    Logger::instance().warn("ensureActiveWindow failed: no window found", "WindowManager");
     return false;
 }
 
@@ -187,8 +199,17 @@ bool WindowManager::applyRect(quintptr hwndRaw, int x, int y, int w, int h, bool
     const HWND hwnd = reinterpret_cast<HWND>(hwndRaw);
     if (!IsWindow(hwnd)) {
         m_lastMessage = "Target window is no longer valid.";
+        Logger::instance().warn(
+            "applyRect: HWND " + std::to_string(hwndRaw) + " is no longer valid",
+            "WindowManager");
         return false;
     }
+    Logger::instance().debug(
+        "applyRect: hwnd=" + std::to_string(hwndRaw) +
+        " x=" + std::to_string(x) + " y=" + std::to_string(y) +
+        " w=" + std::to_string(w) + " h=" + std::to_string(h) +
+        " borderless=" + (borderless ? "true" : "false"),
+        "WindowManager");
 
     if (borderless) {
         LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE);
@@ -681,11 +702,16 @@ bool WindowManager::launchTarget()
 {
     if (m_targetExePath.trimmed().isEmpty()) {
         m_lastMessage = "No executable selected.";
+        Logger::instance().warn("launchTarget: no executable selected", "WindowManager");
         return false;
     }
+    Logger::instance().info(
+        "Launching: " + m_targetExePath.toStdString(), "WindowManager");
     const QString workingDir = QFileInfo(m_targetExePath).absolutePath();
     const bool ok = QProcess::startDetached(m_targetExePath, {}, workingDir);
     m_lastMessage = ok ? "Executable launched." : "Failed to launch executable.";
+    Logger::instance().info(
+        ok ? "Launch succeeded" : "Launch failed", "WindowManager");
     return ok;
 }
 
@@ -710,6 +736,7 @@ int WindowManager::activeWindowMonitorIndex() const
 
 bool WindowManager::killTarget()
 {
+    Logger::instance().info("killTarget called", "WindowManager");
     int count = 0;
 
     // Kill all known loader/companion processes (safety: skip ignored system apps)
@@ -754,6 +781,9 @@ bool WindowManager::killTarget()
 
     m_scanned.clear();
     m_lastMessage = QString("Killed %1 process(es).").arg(count);
+    Logger::instance().info(
+        "killTarget: terminated " + std::to_string(count) + " process(es)",
+        "WindowManager");
     return count > 0;
 }
 

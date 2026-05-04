@@ -109,4 +109,10 @@ private:
     QPushButton *m_monitor1Button;
     QPushButton *m_monitor2Button;
     QPushButton *m_resetAllButton;
+
+    // Status area (two lines replacing the native status bar)
+    QLabel *m_statusExeLabel;
+    QLabel *m_statusDetailLabel;
+
+    bool m_refreshingTable{false};
 };

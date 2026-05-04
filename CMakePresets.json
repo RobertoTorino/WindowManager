@@ -1,0 +1,97 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "windows-msvc-qt6-base",
+      "hidden": true,
+      "generator": "Visual Studio 17 2022",
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      },
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/install/${presetName}",
+        "CMAKE_PREFIX_PATH": "C:/Qt/6.10.2/msvc2022_64",
+        "Qt6_DIR": "C:/Qt/6.10.2/msvc2022_64/lib/cmake/Qt6"
+      }
+    },
+    {
+      "name": "windows-clang-qt6-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang-cl",
+        "CMAKE_CXX_COMPILER": "clang-cl",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/install/${presetName}",
+        "CMAKE_PREFIX_PATH": "C:/Qt/6.10.2/msvc2022_64",
+        "Qt6_DIR": "C:/Qt/6.10.2/msvc2022_64/lib/cmake/Qt6"
+      },
+      "vendor": {
+        "microsoft.com/VisualStudioSettings/CMake/1.0": {
+          "intelliSenseMode": "windows-clang-x64"
+        }
+      }
+    },
+    {
+      "name": "windows-msvc-debug",
+      "displayName": "Windows MSVC Qt6 Debug",
+      "inherits": "windows-msvc-qt6-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "windows-clang-debug",
+      "displayName": "Windows Clang Qt6 Debug",
+      "inherits": "windows-clang-qt6-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "windows-msvc-release",
+      "displayName": "Windows MSVC Qt6 Release",
+      "inherits": "windows-msvc-qt6-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "windows-clang-release",
+      "displayName": "Windows Clang Qt6 Release",
+      "inherits": "windows-clang-qt6-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "build-windows-msvc-debug",
+      "configurePreset": "windows-msvc-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "build-windows-clang-debug",
+      "configurePreset": "windows-clang-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "build-windows-msvc-release",
+      "configurePreset": "windows-msvc-release",
+      "configuration": "Release"
+    },
+    {
+      "name": "build-windows-clang-release",
+      "configurePreset": "windows-clang-release",
+      "configuration": "Release"
+    }
+  ]
+}

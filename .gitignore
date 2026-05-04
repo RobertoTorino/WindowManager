@@ -1,0 +1,13 @@
+build/
+.vs/
+CMakeUserPresets.json
+CMakeCache.txt
+CMakeFiles/
+cmake-build-*/
+out/
+bin/
+*.obj
+*.pdb
+*.ilk
+*.exe
+*.user

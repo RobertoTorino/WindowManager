@@ -1,0 +1,11 @@
+{
+    "cmake.cmakePath": "C:/Program Files/CMake/bin/cmake.exe",
+    "cmake.useCMakePresets": "always",
+    "cmake.configurePreset": "windows-clang-debug",
+    "cmake.buildPreset": "build-windows-clang-debug",
+    "cmake.sourceDirectory": "${workspaceFolder}",
+    "cmake.buildDirectory": "${workspaceFolder}/build",
+    "chat.tools.terminal.autoApprove": {
+        "&": true
+    }
+}

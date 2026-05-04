@@ -58,14 +58,6 @@ BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam)
         return TRUE;
     }
 
-    if (!IsWindowVisible(hwnd)) {
-        return TRUE;
-    }
-
-    if (GetWindow(hwnd, GW_OWNER) != nullptr) {
-        return TRUE;
-    }
-
     RECT rect{};
     if (!GetWindowRect(hwnd, &rect)) {
         return TRUE;
@@ -73,9 +65,6 @@ BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam)
 
     const int width = rect.right - rect.left;
     const int height = rect.bottom - rect.top;
-    if (width < 120 || height < 120) {
-        return TRUE;
-    }
 
     DWORD pid = 0;
     GetWindowThreadProcessId(hwnd, &pid);
@@ -109,6 +98,7 @@ BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam)
     info.pid = static_cast<qint64>(pid);
     info.title = WindowManager::windowTitle(info.hwnd);
     info.className = WindowManager::windowClass(info.hwnd);
+    info.visible = IsWindowVisible(hwnd) != FALSE;
     info.x = rect.left;
     info.y = rect.top;
     info.w = width;
@@ -506,6 +496,59 @@ bool WindowManager::setBorderlessFullscreen()
     const int w = mi.rcMonitor.right - mi.rcMonitor.left;
     const int h = mi.rcMonitor.bottom - mi.rcMonitor.top;
     return applyRect(m_activeWindow, x, y, w, h, true);
+}
+
+bool WindowManager::setBorderlessSize(int monitorIndex, int w, int h)
+{
+    if (!ensureActiveWindow()) return false;
+    const auto mon = MonitorHelper::getMonitorWorkArea(monitorIndex);
+    if (!mon) {
+        m_lastMessage = QString("Monitor %1 not available.").arg(monitorIndex);
+        return false;
+    }
+    return applyRect(m_activeWindow, mon->x, mon->y, w, h, true);
+}
+
+bool WindowManager::setFakeFullscreen(int w, int h)
+{
+    if (!ensureActiveWindow()) return false;
+    const HWND hwnd = reinterpret_cast<HWND>(m_activeWindow);
+
+    const HMONITOR hmon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi{};
+    mi.cbSize = sizeof(mi);
+    if (!GetMonitorInfoW(hmon, &mi)) {
+        m_lastMessage = "Failed to get monitor info.";
+        return false;
+    }
+    return applyRect(m_activeWindow, mi.rcWork.left, mi.rcWork.top, w, h, false);
+}
+
+bool WindowManager::setFakeFullscreenAspect(int w, int h)
+{
+    if (!ensureActiveWindow()) return false;
+    const HWND hwnd = reinterpret_cast<HWND>(m_activeWindow);
+
+    const HMONITOR hmon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi{};
+    mi.cbSize = sizeof(mi);
+    if (!GetMonitorInfoW(hmon, &mi)) {
+        m_lastMessage = "Failed to get monitor info.";
+        return false;
+    }
+    const int mw = mi.rcWork.right  - mi.rcWork.left;
+    const int mh = mi.rcWork.bottom - mi.rcWork.top;
+    int fw = w, fh = h;
+    if (fw > mw || fh > mh) {
+        const double scale = std::min(
+            static_cast<double>(mw) / fw,
+            static_cast<double>(mh) / fh);
+        fw = static_cast<int>(fw * scale);
+        fh = static_cast<int>(fh * scale);
+    }
+    const int x = mi.rcWork.left + (mw - fw) / 2;
+    const int y = mi.rcWork.top  + (mh - fh) / 2;
+    return applyRect(m_activeWindow, x, y, fw, fh, false);
 }
 
 bool WindowManager::fitToScreen()

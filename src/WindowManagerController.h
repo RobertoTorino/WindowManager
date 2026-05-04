@@ -60,6 +60,16 @@ public slots:
     void launchTarget();
     void killTarget();
 
+    // Resolution + display mode combos
+    void borderlessTM1080p();
+    void borderlessL1080p();
+    void fakeFS1080p();
+    void fakeFSA1080p();
+    void borderlessTM1440p();
+    void borderlessL1440p();
+    void fakeFS1440p();
+    void fakeFSA1440p();
+
 signals:
     void statusChanged();
 

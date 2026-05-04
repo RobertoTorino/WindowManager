@@ -295,3 +295,27 @@ void WindowManagerController::killTarget()
     m_stabilizer.clearTrackedWindow();
     publishStatus(m_windowManager.killTarget() ? "Processes killed" : "Kill failed (nothing found)");
 }
+
+void WindowManagerController::borderlessTM1080p()
+{ publishStatus(m_windowManager.setBorderlessSize(1, 1920, 1080) ? "Borderless 1080P (Mon 1)" : m_windowManager.lastMessage()); }
+
+void WindowManagerController::borderlessL1080p()
+{ publishStatus(m_windowManager.setBorderlessSize(2, 1920, 1080) ? "Borderless 1080P (Mon 2)" : m_windowManager.lastMessage()); }
+
+void WindowManagerController::fakeFS1080p()
+{ publishStatus(m_windowManager.setFakeFullscreen(1920, 1080) ? "Fake FS 1080P" : m_windowManager.lastMessage()); }
+
+void WindowManagerController::fakeFSA1080p()
+{ publishStatus(m_windowManager.setFakeFullscreenAspect(1920, 1080) ? "Fake FSA 1080P" : m_windowManager.lastMessage()); }
+
+void WindowManagerController::borderlessTM1440p()
+{ publishStatus(m_windowManager.setBorderlessSize(1, 2560, 1440) ? "Borderless 1440P (Mon 1)" : m_windowManager.lastMessage()); }
+
+void WindowManagerController::borderlessL1440p()
+{ publishStatus(m_windowManager.setBorderlessSize(2, 2560, 1440) ? "Borderless 1440P (Mon 2)" : m_windowManager.lastMessage()); }
+
+void WindowManagerController::fakeFS1440p()
+{ publishStatus(m_windowManager.setFakeFullscreen(2560, 1440) ? "Fake FS 1440P" : m_windowManager.lastMessage()); }
+
+void WindowManagerController::fakeFSA1440p()
+{ publishStatus(m_windowManager.setFakeFullscreenAspect(2560, 1440) ? "Fake FSA 1440P" : m_windowManager.lastMessage()); }

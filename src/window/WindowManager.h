@@ -13,6 +13,7 @@ public:
         qint64 pid{0};
         QString title;
         QString className;
+        bool visible{false};
         int x{0};
         int y{0};
         int w{0};
@@ -49,6 +50,9 @@ public:
     // Window layout / style
     bool setWindowed();
     bool setBorderlessFullscreen();
+    bool setBorderlessSize(int monitorIndex, int w, int h);
+    bool setFakeFullscreen(int w, int h);
+    bool setFakeFullscreenAspect(int w, int h);
     bool fitToScreen();
     bool toggleTopmost();
     bool toggleToolWindow();

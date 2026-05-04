@@ -18,6 +18,7 @@ find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Core)
 
 set(WINDOW_MANAGER_SOURCES
     resources/resources.qrc
+    $<$<PLATFORM_ID:Windows>:resources/app.rc>
     src/main.cpp
     src/MainWindow.cpp
     src/MainWindow.h

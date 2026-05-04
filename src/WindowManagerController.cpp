@@ -42,6 +42,9 @@ const std::vector<WindowManager::WindowInfo>& WindowManagerController::scannedWi
 void WindowManagerController::setTargetExecutable(const QString& exePath)
 {
     m_windowManager.setTargetExecutable(exePath);
+    // Auto-scan so the table populates immediately if the game is already running
+    const bool found = m_windowManager.scanWindowsForTarget();
+    if (found) syncStabilizerTarget();
     publishStatus("Target executable selected");
 }
 
@@ -288,6 +291,12 @@ void WindowManagerController::resetAll()
 
 void WindowManagerController::launchTarget()
 { publishStatus(m_windowManager.launchTarget() ? "Launched" : "Launch failed"); }
+
+void WindowManagerController::focusTarget()
+{ publishStatus(m_windowManager.focusTarget() ? "Focus restored" : "Focus failed"); }
+
+int WindowManagerController::activeWindowMonitorIndex() const
+{ return m_windowManager.activeWindowMonitorIndex(); }
 
 void WindowManagerController::killTarget()
 {

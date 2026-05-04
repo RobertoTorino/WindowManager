@@ -18,6 +18,7 @@
 #include <QWidget>
 
 #include "WindowManagerController.h"
+#include "window/MonitorHelper.h"
 
 // Converts __DATE__ ("May  4 2026") + __TIME__ ("13:01:39") to "build: 2026-05-04 13:01:39 - RT"
 static QString buildTimestamp()
@@ -73,6 +74,8 @@ MainWindow::MainWindow(QWidget *parent)
     , m_launchButton(nullptr)
     , m_stabilizerButton(nullptr)
     , m_killButton(nullptr)
+        , m_focusButton(nullptr)
+        , m_moveAppButton(nullptr)
     , m_destroyButton(nullptr)
     , m_hideButton(nullptr)
     , m_showButton(nullptr)
@@ -145,6 +148,8 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_launchButton,     &QPushButton::clicked, m_controller, &WindowManagerController::launchTarget);
     connect(m_stabilizerButton, &QPushButton::clicked, m_controller, &WindowManagerController::toggleStabilizer);
     connect(m_killButton,       &QPushButton::clicked, m_controller, &WindowManagerController::killTarget);
+        connect(m_focusButton,      &QPushButton::clicked, m_controller, &WindowManagerController::focusTarget);
+        connect(m_moveAppButton,    &QPushButton::clicked, this, &MainWindow::moveAppToOppositeMonitor);
 
     // Row 1
     connect(m_destroyButton,    &QPushButton::clicked, m_controller, &WindowManagerController::destroyWindow);
@@ -257,6 +262,8 @@ void MainWindow::buildUi()
     m_monitor2Button   = new QPushButton("Monitor 02",        central);
     m_stabilizerButton = new QPushButton("Enable Stabilizer", central);
     m_killButton       = makeRedButton("Kill Process",        central);
+        m_focusButton      = makeGreenButton("Focus Game",        central);
+        m_moveAppButton    = new QPushButton("Move App \u2194 Mon", central);
     m_selectExeButton->setMinimumHeight(44);
     m_launchButton->setMinimumHeight(44);
     m_scanButton->setMinimumHeight(44);
@@ -265,6 +272,8 @@ void MainWindow::buildUi()
     m_monitor2Button->setMinimumHeight(44);
     m_stabilizerButton->setMinimumHeight(44);
     m_killButton->setMinimumHeight(44);
+        m_focusButton->setMinimumHeight(44);
+        m_moveAppButton->setMinimumHeight(44);
 
     auto *topControls = new QHBoxLayout();
     topControls->setSpacing(4);
@@ -277,6 +286,8 @@ void MainWindow::buildUi()
     topControls->addWidget(m_monitor2Button, 1);
     topControls->addWidget(m_stabilizerButton, 1);
     topControls->addWidget(m_killButton, 1);
+        topControls->addWidget(m_focusButton, 1);
+        topControls->addWidget(m_moveAppButton, 1);
 
     // ── Window table ───────────────────────────────────────────────────────
     m_windowTable = new QTableWidget(central);
@@ -563,3 +574,27 @@ void MainWindow::refreshWindowTable()
     else
         m_windowTable->clearSelection();
 }
+
+    void MainWindow::moveAppToOppositeMonitor()
+    {
+        // Find which monitor the active game window is on
+        const int gameMonitor = m_controller->activeWindowMonitorIndex(); // 0 = unknown
+
+        const auto monitors = MonitorHelper::enumerateMonitors();
+        if (monitors.empty()) return;
+
+        // Pick the first monitor that isn't the game's monitor.
+        // If game monitor is unknown (0) or only one monitor exists, just use monitor 1.
+        const MonitorGeometry* target = nullptr;
+        for (const auto& m : monitors) {
+            if (m.index != gameMonitor) {
+                target = &m;
+                break;
+            }
+        }
+        // Fallback: if every monitor IS the game monitor (single-monitor setup), use index 1
+        if (!target) target = &monitors[0];
+
+        // Move this window to the top-left of the chosen monitor
+        move(target->x, target->y);
+    }

@@ -683,9 +683,29 @@ bool WindowManager::launchTarget()
         m_lastMessage = "No executable selected.";
         return false;
     }
-    const bool ok = QProcess::startDetached(m_targetExePath);
+    const QString workingDir = QFileInfo(m_targetExePath).absolutePath();
+    const bool ok = QProcess::startDetached(m_targetExePath, {}, workingDir);
     m_lastMessage = ok ? "Executable launched." : "Failed to launch executable.";
     return ok;
+}
+
+bool WindowManager::focusTarget()
+{
+    if (!ensureActiveWindow()) return false;
+    const HWND hwnd = reinterpret_cast<HWND>(m_activeWindow);
+    // AllowSetForegroundWindow bypasses the foreground lock so we can steal focus
+    AllowSetForegroundWindow(ASFW_ANY);
+    ShowWindow(hwnd, SW_RESTORE);
+    SetForegroundWindow(hwnd);
+    BringWindowToTop(hwnd);
+    m_lastMessage = "Focus restored to game window.";
+    return true;
+}
+
+int WindowManager::activeWindowMonitorIndex() const
+{
+    if (!m_activeWindow) return 0;
+    return MonitorHelper::getMonitorIndexFromWindow(reinterpret_cast<void*>(m_activeWindow));
 }
 
 bool WindowManager::killTarget()

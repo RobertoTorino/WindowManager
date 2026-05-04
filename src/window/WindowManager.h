@@ -64,6 +64,10 @@ public:
     bool launchTarget();
     bool killTarget();
 
+        // Focus / monitor helpers
+        bool focusTarget();
+        int  activeWindowMonitorIndex() const;
+
     QString lastMessage() const;
 
     // Process filter lists (case-insensitive exe names)

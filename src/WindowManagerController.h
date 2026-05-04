@@ -18,6 +18,7 @@ public:
     bool stabilizerEnabled() const;
     quintptr activeWindow() const;
     const std::vector<WindowManager::WindowInfo>& scannedWindows() const;
+        int activeWindowMonitorIndex() const;
 
 public slots:
     void setTargetExecutable(const QString& exePath);
@@ -59,6 +60,7 @@ public slots:
     // Process control
     void launchTarget();
     void killTarget();
+        void focusTarget();
 
     // Resolution + display mode combos
     void borderlessTM1080p();

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 # Single source of truth for version — workflows read this with a regex
-set(APP_VERSION "0.1.2")
+set(APP_VERSION "0.1.3")
 
 project(WindowManager VERSION ${APP_VERSION} LANGUAGES CXX)
 
@@ -144,3 +144,4 @@ if(WINDOWMANAGER_BUILD_TESTS)
     add_wm_test(tst_supersample src/window/Supersample.cpp)
     add_wm_test(tst_appconfig   src/config/AppConfig.cpp src/core/Logger.cpp)
 endif()
+

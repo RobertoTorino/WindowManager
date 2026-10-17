@@ -2,5 +2,7 @@
 <RCC version="1.0">
   <qresource prefix="/">
     <file>window-manager-icon.png</file>
+    <file>arrow-up.svg</file>
+    <file>arrow-down.svg</file>
   </qresource>
 </RCC>

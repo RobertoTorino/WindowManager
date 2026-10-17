@@ -2,6 +2,13 @@
 
 #include "MainWindow.h"
 #include "core/Logger.h"
+#include "ui/Theme.h"
+
+#include <cstdlib>
+#include <filesystem>
+#include <string>
+
+#include <Windows.h>
 
 static void qtMessageHandler(QtMsgType type, const QMessageLogContext& ctx, const QString& msg)
 {
@@ -20,20 +27,20 @@ static void qtMessageHandler(QtMsgType type, const QMessageLogContext& ctx, cons
 
 int main(int argc, char *argv[])
 {
-    // Set up log file next to the executable before anything else so every
-    // message — including Qt asserts — is captured from the very first line.
-    {
-        const std::filesystem::path exeDir =
-            std::filesystem::path(argv[0]).parent_path();
-        Logger::instance().setLogFile(exeDir / "windowmanager.log");
-    }
+    QApplication app(argc, argv);
+
+    // Log next to the executable. applicationDirPath() is absolute, unlike
+    // argv[0], which may be relative or just a bare name.
+    Logger::instance().setLogFile(
+        std::filesystem::path(QCoreApplication::applicationDirPath().toStdWString())
+        / "windowmanager.log");
     qInstallMessageHandler(qtMessageHandler);
 
     Logger::instance().info("=== WindowManager started ===", "main");
 
-    QApplication app(argc, argv);
     QApplication::setApplicationName("WindowManager");
     QApplication::setOrganizationName("WindowManager");
+    Theme::apply(app);
 
     MainWindow window;
     window.show();

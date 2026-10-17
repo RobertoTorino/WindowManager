@@ -2,7 +2,10 @@
 
 #include <QObject>
 #include <QString>
+#include <QElapsedTimer>
+#include <QTimer>
 
+#include "window/FitCalculator.h"
 #include "window/WindowManager.h"
 #include "window/WindowStabilizer.h"
 
@@ -20,7 +23,33 @@ public:
     const std::vector<WindowManager::WindowInfo>& scannedWindows() const;
         int activeWindowMonitorIndex() const;
 
+    // Current extended-style toggles for the active window
+    struct StyleState {
+        bool topmost{false};
+        bool toolWindow{false};
+        bool layered{false};
+        bool noActivate{false};
+    };
+    StyleState queryActiveWindowStyleState() const;
+
+    // Current window visibility/state toggles for the active window
+    struct VisibilityState {
+        bool visible{false};      // IsWindowVisible
+        bool minimized{false};    // IsIconic
+        bool maximized{false};    // IsZoomed
+        bool windowed{false};     // Has WS_CAPTION (not borderless)
+    };
+    VisibilityState queryActiveWindowVisibilityState() const;
+
+    // Fit to monitor (see FitDialog). When enabled, launching a game arms a
+    // check that fires fitProposed() once the game's window has settled.
+    bool fitCheckEnabled() const { return m_fitCheckEnabled; }
+    void setFitCheckEnabled(bool enabled);
+    bool measureFit(const WindowManager::FitRequest& request, WindowManager::FitMeasurement& out);
+    void applyFit(const WindowManager::FitRequest& request);
+
 public slots:
+    void requestFitCheck();   // propose a fit now for the current window
     void setTargetExecutable(const QString& exePath);
     void scanWindows();
     void applySavedSettings();
@@ -74,12 +103,31 @@ public slots:
 
 signals:
     void statusChanged();
+    void fitProposed();   // a game window is ready; show the fit dialog
+
+private slots:
+    void onBatchPollTick();
+    void onFitTick();
 
 private:
     void publishStatus(const QString& prefix = {});
     void syncStabilizerTarget();
+    void setStatus(const QString& text);
+    void armFitCheck();
+    void disarmFitCheck();
+    // Re-syncs the stabilizer on success, then publishes "okMsg"/"failMsg".
+    void finish(bool ok, const char* okMsg, const char* failMsg);
 
     WindowManager m_windowManager;
     WindowStabilizer m_stabilizer;
     QString m_statusText;
+
+    Fit::Trigger  m_fitTrigger;
+    QTimer*       m_fitTimer{nullptr};
+    QElapsedTimer m_clock;
+    bool          m_fitCheckEnabled{true};
+
+    QTimer* m_batchPollTimer{nullptr};
+    int     m_batchPollCount{0};
+    static constexpr int k_batchPollMaxAttempts = 15;
 };

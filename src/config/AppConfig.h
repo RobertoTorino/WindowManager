@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <QHash>
+#include <QList>
 #include <QString>
 
 /**
@@ -16,6 +17,19 @@
 class AppConfig
 {
 public:
+    struct GameEntry
+    {
+        QString applicationPath;
+        QString captureDir;
+        QString ebootIsoPath;
+        QString gameApplication;
+        QString id;
+        QString isPatchable{"false"};
+        QString launcherType{"STANDARD"};
+        QString savedName;
+        QString snapshotDir;
+    };
+
     struct WindowProfile
     {
         int  x{0};
@@ -31,9 +45,18 @@ public:
     bool save();
     QString configPath() const;
 
+    // Redirects the config file (used by tests); empty restores the default
+    // location next to the executable. Does not reload.
+    void setConfigPathOverride(const QString& path);
+
     // Currently selected target executable
     QString currentExePath() const;
     void    setCurrentExePath(const QString& path);
+
+    QList<GameEntry> games() const;
+    std::optional<GameEntry> gameByPath(const QString& applicationPath) const;
+    std::optional<GameEntry> currentGame() const;
+    void saveGame(const GameEntry& game);
 
     // Per-exe window profiles
     std::optional<WindowProfile> getWindowProfile(const QString& exePath) const;
@@ -51,6 +74,8 @@ private:
 
     QString configFilePath() const;
 
-    QString                    m_currentExePath;
+    QString                       m_configPathOverride;
+    QString                       m_currentExePath;
+    QHash<QString, GameEntry>     m_games;
     QHash<QString, WindowProfile> m_profiles;
 };

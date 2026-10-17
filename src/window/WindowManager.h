@@ -1,7 +1,10 @@
 #pragma once
 
 #include <QString>
+#include "FitCalculator.h"
 #include <QtGlobal>
+#include <cstdint>
+#include <unordered_set>
 #include <vector>
 
 class WindowManager
@@ -21,6 +24,47 @@ public:
     };
 
     WindowManager() = default;
+
+    // ----- Fit to monitor -------------------------------------------------
+    struct FitRequest
+    {
+        int  monitorIndex{0};    // 1-based; 0 = the monitor the window is on
+        bool workArea{false};    // true: leave the taskbar visible
+        bool stripFrame{true};   // remove title bar / borders first (if present)
+    };
+
+    struct FitMeasurement
+    {
+        bool     valid{false};
+        QString  error;
+
+        quintptr hwnd{0};
+        QString  title;
+        QString  className;
+        bool     hasFrame{false};      // WS_CAPTION or WS_THICKFRAME present
+        Fit::Rect outer;               // window rectangle
+        Fit::Rect client;              // picture, in screen coordinates
+        Fit::Rect visibleFrame;        // DWM bounds (excludes invisible resize border)
+        int      monitorIndex{0};
+        Fit::Rect monitor;             // the target monitor (full rectangle)
+        Fit::Rect target;              // monitor or work area, per the request
+        bool     stripFrame{false};    // effective: frame will be removed
+        Fit::Plan plan;
+    };
+
+    // The window most likely to be "the game": visible, big enough, not a
+    // console / IME helper. `ready` means usable now (visible, not minimized).
+    struct PrimaryWindow
+    {
+        quintptr  hwnd{0};
+        bool      ready{false};
+        Fit::Rect rect;
+    };
+    PrimaryWindow findPrimaryWindow() const;
+
+    bool measureFit(const FitRequest& request, FitMeasurement& out);
+    bool applyFit(const FitRequest& request);
+
 
     void setTargetExecutable(const QString& exePath);
     QString targetExecutable() const;
@@ -64,6 +108,10 @@ public:
     bool launchTarget();
     bool killTarget();
 
+    // Batch-launch child detection
+    void snapshotProcesses();
+    bool pollForBatchChild(); // true once the real game process is found
+
         // Focus / monitor helpers
         bool focusTarget();
         int  activeWindowMonitorIndex() const;
@@ -86,4 +134,12 @@ private:
     quintptr m_activeWindow{0};
     QString m_lastMessage;
     std::vector<WindowInfo> m_scanned;
+
+    // Batch-launch child detection state
+    bool m_batchLaunchPending{false};
+    std::unordered_set<uint32_t> m_preLaunchPids;
+
+    // Session tracking so killTarget only touches processes we are responsible for
+    std::unordered_set<uint32_t> m_sessionPids;   // launched / detected game pids
+    uint64_t                     m_launchTime{0}; // FILETIME of last launch, 0 = none
 };

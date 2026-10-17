@@ -3,10 +3,13 @@
 #include "config/AppConfig.h"
 #include "core/Logger.h"
 
+#include <Windows.h>
+
 WindowManagerController::WindowManagerController(QObject *parent)
     : QObject(parent)
     , m_statusText("Select an executable to begin window management.")
 {
+    m_clock.start();
     AppConfig::instance().load();
     const QString lastExe = AppConfig::instance().currentExePath();
     if (!lastExe.isEmpty()) {
@@ -40,6 +43,38 @@ quintptr WindowManagerController::activeWindow() const
     return m_windowManager.activeWindow();
 }
 
+WindowManagerController::StyleState WindowManagerController::queryActiveWindowStyleState() const
+{
+    StyleState s;
+    const quintptr hwnd = m_windowManager.activeWindow();
+    if (!hwnd) return s;
+    const HWND h = reinterpret_cast<HWND>(hwnd);
+    if (!IsWindow(h)) return s;
+
+    const LONG_PTR ex = GetWindowLongPtr(h, GWL_EXSTYLE);
+    s.topmost    = (ex & WS_EX_TOPMOST) != 0;
+    s.toolWindow = (ex & WS_EX_TOOLWINDOW) != 0;
+    s.layered    = (ex & WS_EX_LAYERED) != 0;
+    s.noActivate = (ex & WS_EX_NOACTIVATE) != 0;
+    return s;
+}
+
+WindowManagerController::VisibilityState WindowManagerController::queryActiveWindowVisibilityState() const
+{
+    VisibilityState v;
+    const quintptr hwnd = m_windowManager.activeWindow();
+    if (!hwnd) return v;
+    const HWND h = reinterpret_cast<HWND>(hwnd);
+    if (!IsWindow(h)) return v;
+
+    v.visible    = IsWindowVisible(h) != 0;
+    v.minimized  = IsIconic(h) != 0;
+    v.maximized  = IsZoomed(h) != 0;
+    const LONG_PTR style = GetWindowLongPtr(h, GWL_STYLE);
+    v.windowed   = (style & WS_CAPTION) != 0;
+    return v;
+}
+
 const std::vector<WindowManager::WindowInfo>& WindowManagerController::scannedWindows() const
 {
     return m_windowManager.scannedWindows();
@@ -49,6 +84,8 @@ void WindowManagerController::setTargetExecutable(const QString& exePath)
 {
     Logger::instance().info(
         "setTargetExecutable: " + exePath.toStdString(), "WindowManagerController");
+    if (exePath != m_windowManager.targetExecutable())
+        disarmFitCheck();
     m_windowManager.setTargetExecutable(exePath);
     // Auto-scan so the table populates immediately if the game is already running
     const bool found = m_windowManager.scanWindowsForTarget();
@@ -58,47 +95,27 @@ void WindowManagerController::setTargetExecutable(const QString& exePath)
 
 void WindowManagerController::scanWindows()
 {
-    const bool ok = m_windowManager.scanWindowsForTarget();
-    if (ok) {
-        syncStabilizerTarget();
-    }
-    publishStatus(ok ? "Scan complete" : "Scan failed");
+    finish(m_windowManager.scanWindowsForTarget(), "Scan complete", "Scan failed");
 }
 
 void WindowManagerController::applySavedSettings()
 {
-    const bool ok = m_windowManager.applySavedProfile();
-    if (ok) {
-        syncStabilizerTarget();
-    }
-    publishStatus(ok ? "Applied saved settings" : "Apply failed");
+    finish(m_windowManager.applySavedProfile(), "Applied saved settings", "Apply failed");
 }
 
 void WindowManagerController::saveCurrentPosition()
 {
-    const bool ok = m_windowManager.saveCurrentPosition();
-    if (ok) {
-        syncStabilizerTarget();
-    }
-    publishStatus(ok ? "Saved current position" : "Save failed");
+    finish(m_windowManager.saveCurrentPosition(), "Saved current position", "Save failed");
 }
 
 void WindowManagerController::moveToMonitor1()
 {
-    const bool ok = m_windowManager.moveToMonitor(1);
-    if (ok) {
-        syncStabilizerTarget();
-    }
-    publishStatus(ok ? "Moved to monitor 1" : "Move failed");
+    finish(m_windowManager.moveToMonitor(1), "Moved to monitor 1", "Move failed");
 }
 
 void WindowManagerController::moveToMonitor2()
 {
-    const bool ok = m_windowManager.moveToMonitor(2);
-    if (ok) {
-        syncStabilizerTarget();
-    }
-    publishStatus(ok ? "Moved to monitor 2" : "Move failed");
+    finish(m_windowManager.moveToMonitor(2), "Moved to monitor 2", "Move failed");
 }
 
 void WindowManagerController::toggleStabilizer()
@@ -117,101 +134,57 @@ void WindowManagerController::toggleStabilizer()
 
 void WindowManagerController::nudgeLeft(int step)
 {
-    const bool ok = m_windowManager.nudge(-step, 0);
-    if (ok) {
-        syncStabilizerTarget();
-    }
-    publishStatus(ok ? "Nudged left" : "Nudge failed");
+    finish(m_windowManager.nudge(-step, 0), "Nudged left", "Nudge failed");
 }
 
 void WindowManagerController::nudgeRight(int step)
 {
-    const bool ok = m_windowManager.nudge(step, 0);
-    if (ok) {
-        syncStabilizerTarget();
-    }
-    publishStatus(ok ? "Nudged right" : "Nudge failed");
+    finish(m_windowManager.nudge(step, 0), "Nudged right", "Nudge failed");
 }
 
 void WindowManagerController::nudgeUp(int step)
 {
-    const bool ok = m_windowManager.nudge(0, -step);
-    if (ok) {
-        syncStabilizerTarget();
-    }
-    publishStatus(ok ? "Nudged up" : "Nudge failed");
+    finish(m_windowManager.nudge(0, -step), "Nudged up", "Nudge failed");
 }
 
 void WindowManagerController::nudgeDown(int step)
 {
-    const bool ok = m_windowManager.nudge(0, step);
-    if (ok) {
-        syncStabilizerTarget();
-    }
-    publishStatus(ok ? "Nudged down" : "Nudge failed");
+    finish(m_windowManager.nudge(0, step), "Nudged down", "Nudge failed");
 }
 
 void WindowManagerController::growWidth(int step)
 {
-    const bool ok = m_windowManager.nudge(0, 0, step, 0, true);
-    if (ok) {
-        syncStabilizerTarget();
-    }
-    publishStatus(ok ? "Width increased" : "Resize failed");
+    finish(m_windowManager.nudge(0, 0, step, 0, true), "Width increased", "Resize failed");
 }
 
 void WindowManagerController::shrinkWidth(int step)
 {
-    const bool ok = m_windowManager.nudge(0, 0, -step, 0, true);
-    if (ok) {
-        syncStabilizerTarget();
-    }
-    publishStatus(ok ? "Width decreased" : "Resize failed");
+    finish(m_windowManager.nudge(0, 0, -step, 0, true), "Width decreased", "Resize failed");
 }
 
 void WindowManagerController::growHeight(int step)
 {
-    const bool ok = m_windowManager.nudge(0, 0, 0, step, true);
-    if (ok) {
-        syncStabilizerTarget();
-    }
-    publishStatus(ok ? "Height increased" : "Resize failed");
+    finish(m_windowManager.nudge(0, 0, 0, step, true), "Height increased", "Resize failed");
 }
 
 void WindowManagerController::shrinkHeight(int step)
 {
-    const bool ok = m_windowManager.nudge(0, 0, 0, -step, true);
-    if (ok) {
-        syncStabilizerTarget();
-    }
-    publishStatus(ok ? "Height decreased" : "Resize failed");
+    finish(m_windowManager.nudge(0, 0, 0, -step, true), "Height decreased", "Resize failed");
 }
 
 void WindowManagerController::setCustomSize(int width, int height)
 {
-    const bool ok = m_windowManager.setCustomSize(width, height);
-    if (ok) {
-        syncStabilizerTarget();
-    }
-    publishStatus(ok ? "Custom size applied" : "Set size failed");
+    finish(m_windowManager.setCustomSize(width, height), "Custom size applied", "Set size failed");
 }
 
 void WindowManagerController::applyHorizontalOverscan(int pixels)
 {
-    const bool ok = m_windowManager.applyHorizontalOverscan(pixels);
-    if (ok) {
-        syncStabilizerTarget();
-    }
-    publishStatus(ok ? "Horizontal overscan applied" : "Overscan failed");
+    finish(m_windowManager.applyHorizontalOverscan(pixels), "Horizontal overscan applied", "Overscan failed");
 }
 
 void WindowManagerController::applyVerticalOverscan(int pixels)
 {
-    const bool ok = m_windowManager.applyVerticalOverscan(pixels);
-    if (ok) {
-        syncStabilizerTarget();
-    }
-    publishStatus(ok ? "Vertical overscan applied" : "Overscan failed");
+    finish(m_windowManager.applyVerticalOverscan(pixels), "Vertical overscan applied", "Overscan failed");
 }
 
 void WindowManagerController::setActiveWindow(quintptr hwnd)
@@ -230,6 +203,12 @@ void WindowManagerController::syncStabilizerTarget()
         m_stabilizer.trackWindow(hwnd, x, y, w, h);
     else
         m_stabilizer.clearTrackedWindow();
+}
+
+void WindowManagerController::finish(bool ok, const char* okMsg, const char* failMsg)
+{
+    if (ok) syncStabilizerTarget();
+    publishStatus(ok ? okMsg : failMsg);
 }
 
 void WindowManagerController::publishStatus(const QString& prefix)
@@ -259,23 +238,17 @@ void WindowManagerController::restoreWindow()
 
 void WindowManagerController::setWindowed()
 {
-    const bool ok = m_windowManager.setWindowed();
-    if (ok) syncStabilizerTarget();
-    publishStatus(ok ? "Windowed mode set" : "Windowed failed");
+    finish(m_windowManager.setWindowed(), "Windowed mode set", "Windowed failed");
 }
 
 void WindowManagerController::setBorderlessFullscreen()
 {
-    const bool ok = m_windowManager.setBorderlessFullscreen();
-    if (ok) syncStabilizerTarget();
-    publishStatus(ok ? "True borderless fullscreen set" : "Borderless failed");
+    finish(m_windowManager.setBorderlessFullscreen(), "True borderless fullscreen set", "Borderless failed");
 }
 
 void WindowManagerController::fitToScreen()
 {
-    const bool ok = m_windowManager.fitToScreen();
-    if (ok) syncStabilizerTarget();
-    publishStatus(ok ? "Fit to screen" : "Fit failed");
+    finish(m_windowManager.fitToScreen(), "Fit to screen", "Fit failed");
 }
 
 void WindowManagerController::toggleTopmost()
@@ -292,13 +265,56 @@ void WindowManagerController::toggleNoActivate()
 
 void WindowManagerController::resetAll()
 {
-    const bool ok = m_windowManager.resetAll();
-    if (ok) syncStabilizerTarget();
-    publishStatus(ok ? "Window reset to defaults" : "Reset failed");
+    finish(m_windowManager.resetAll(), "Window reset to defaults", "Reset failed");
 }
 
 void WindowManagerController::launchTarget()
-{ publishStatus(m_windowManager.launchTarget() ? "Launched" : "Launch failed"); }
+{
+    const bool isBatch =
+        m_windowManager.targetExecutable().endsWith(".bat", Qt::CaseInsensitive) ||
+        m_windowManager.targetExecutable().endsWith(".cmd", Qt::CaseInsensitive);
+
+    if (isBatch)
+        m_windowManager.snapshotProcesses();
+
+    const bool ok = m_windowManager.launchTarget();
+    publishStatus(ok ? "Launched" : "Launch failed");
+
+    if (ok)
+        armFitCheck();
+
+    if (ok && isBatch) {
+        m_batchPollCount = 0;
+        if (!m_batchPollTimer) {
+            m_batchPollTimer = new QTimer(this);
+            m_batchPollTimer->setInterval(1000);
+            connect(m_batchPollTimer, &QTimer::timeout,
+                    this, &WindowManagerController::onBatchPollTick);
+        }
+        m_batchPollTimer->start();
+        publishStatus("Batch launched - scanning for game process...");
+    }
+}
+
+void WindowManagerController::onBatchPollTick()
+{
+    ++m_batchPollCount;
+    if (m_batchPollCount > k_batchPollMaxAttempts) {
+        m_batchPollTimer->stop();
+        Logger::instance().warn(
+            "Batch scan timed out after " + std::to_string(k_batchPollMaxAttempts) + " seconds",
+            "WindowManagerController");
+        publishStatus("Batch scan timed out: game process not detected");
+        return;
+    }
+
+    const bool found = m_windowManager.pollForBatchChild();
+    if (found) {
+        m_batchPollTimer->stop();
+        syncStabilizerTarget();
+        publishStatus("Game process detected");
+    }
+}
 
 void WindowManagerController::focusTarget()
 { publishStatus(m_windowManager.focusTarget() ? "Focus restored" : "Focus failed"); }
@@ -309,6 +325,7 @@ int WindowManagerController::activeWindowMonitorIndex() const
 void WindowManagerController::killTarget()
 {
     Logger::instance().info("killTarget requested", "WindowManagerController");
+    disarmFitCheck();
     m_stabilizer.stop();
     m_stabilizer.clearTrackedWindow();
     publishStatus(m_windowManager.killTarget() ? "Processes killed" : "Kill failed (nothing found)");
@@ -337,3 +354,93 @@ void WindowManagerController::fakeFS1440p()
 
 void WindowManagerController::fakeFSA1440p()
 { publishStatus(m_windowManager.setFakeFullscreenAspect(2560, 1440) ? "Fake FSA 1440P" : m_windowManager.lastMessage()); }
+
+// ---------------------------------------------------------------------------
+// Fit to monitor
+// ---------------------------------------------------------------------------
+
+void WindowManagerController::setStatus(const QString& text)
+{
+    m_statusText = text;
+    emit statusChanged();
+}
+
+void WindowManagerController::setFitCheckEnabled(bool enabled)
+{
+    m_fitCheckEnabled = enabled;
+    if (!enabled)
+        disarmFitCheck();
+}
+
+void WindowManagerController::armFitCheck()
+{
+    if (!m_fitCheckEnabled)
+        return;
+
+    if (!m_fitTimer) {
+        m_fitTimer = new QTimer(this);
+        m_fitTimer->setInterval(500);
+        connect(m_fitTimer, &QTimer::timeout, this, &WindowManagerController::onFitTick);
+    }
+    m_fitTrigger.arm(m_clock.elapsed());
+    m_fitTimer->start();
+    setStatus("Waiting for the game window to settle, then the fit check will open...");
+}
+
+void WindowManagerController::disarmFitCheck()
+{
+    m_fitTrigger.disarm();
+    if (m_fitTimer)
+        m_fitTimer->stop();
+}
+
+void WindowManagerController::onFitTick()
+{
+    const auto w = m_windowManager.findPrimaryWindow();
+    switch (m_fitTrigger.update(m_clock.elapsed(), w.hwnd, w.ready, w.rect)) {
+    case Fit::Trigger::Result::Fire:
+        m_fitTimer->stop();
+        m_windowManager.scanWindowsForTarget();   // refresh the table
+        m_windowManager.setActiveWindow(w.hwnd);  // and act on the window we measured
+        syncStabilizerTarget();
+        Logger::instance().info("Fit check: game window settled, proposing fit", "WindowManagerController");
+        setStatus("Game window ready: review the proposed fit.");
+        emit fitProposed();
+        break;
+    case Fit::Trigger::Result::TimedOut:
+        m_fitTimer->stop();
+        Logger::instance().warn("Fit check timed out: no game window appeared", "WindowManagerController");
+        setStatus("Fit check cancelled: no game window appeared in time (use Fit to monitor... later).");
+        break;
+    case Fit::Trigger::Result::Idle:
+        m_fitTimer->stop();
+        break;
+    case Fit::Trigger::Result::Waiting:
+        break;
+    }
+}
+
+void WindowManagerController::requestFitCheck()
+{
+    if (!m_windowManager.activeWindow() && !m_windowManager.scanWindowsForTarget()) {
+        setStatus("Fit check: no game window found. Start the game and press Scan.");
+        return;
+    }
+    emit fitProposed();
+}
+
+bool WindowManagerController::measureFit(const WindowManager::FitRequest& request,
+                                         WindowManager::FitMeasurement& out)
+{
+    return m_windowManager.measureFit(request, out);
+}
+
+void WindowManagerController::applyFit(const WindowManager::FitRequest& request)
+{
+    const bool ok = m_windowManager.applyFit(request);
+    if (m_windowManager.activeWindow())
+        syncStabilizerTarget();
+    // lastMessage already says whether the fit is exact, or what is still off
+    setStatus(m_windowManager.lastMessage());
+    Logger::instance().info(std::string("applyFit ") + (ok ? "exact" : "not exact"), "WindowManagerController");
+}

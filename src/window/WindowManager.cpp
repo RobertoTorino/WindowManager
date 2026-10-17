@@ -2,16 +2,20 @@
 
 #include "../config/AppConfig.h"
 #include "../core/Logger.h"
+#include "KillPlanner.h"
 #include "MonitorHelper.h"
 
 #include <Windows.h>
+#include <dwmapi.h>
 #include <tlhelp32.h>
 
+#include <QDir>
 #include <QFileInfo>
 #include <QProcess>
 
 #include <algorithm>
 #include <string>
+#include <unordered_set>
 
 namespace {
 
@@ -39,12 +43,62 @@ const QStringList& teknoLoaderListInternal()
     return list;
 }
 
+uint64_t filetimeToU64(const FILETIME& ft)
+{
+    return (static_cast<uint64_t>(ft.dwHighDateTime) << 32) | ft.dwLowDateTime;
+}
+
+uint64_t nowFileTime()
+{
+    FILETIME ft{};
+    GetSystemTimeAsFileTime(&ft);
+    return filetimeToU64(ft);
+}
+
+uint64_t processCreationTime(DWORD pid)
+{
+    const HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!h) return 0;
+    FILETIME created{}, exited{}, kernel{}, user{};
+    const BOOL ok = GetProcessTimes(h, &created, &exited, &kernel, &user);
+    CloseHandle(h);
+    return ok ? filetimeToU64(created) : 0;
+}
+
+std::unordered_set<std::string> toLowerSet(const QStringList& list)
+{
+    std::unordered_set<std::string> out;
+    for (const auto& s : list)
+        out.insert(s.toLower().toStdString());
+    return out;
+}
+
+Fit::Rect toFitRect(const RECT& r)
+{
+    return Fit::Rect{r.left, r.top, r.right, r.bottom};
+}
+
+bool isIgnoredHelperClass(const QString& cls)
+{
+    // Visible-but-not-the-game windows that processes commonly own
+    return cls.compare("ConsoleWindowClass", Qt::CaseInsensitive) == 0
+        || cls.compare("IME", Qt::CaseInsensitive) == 0
+        || cls.compare("MSCTFIME UI", Qt::CaseInsensitive) == 0;
+}
+
 struct ScanContext
 {
     QString targetPathLower;
     QString targetExeLower;
     std::vector<WindowManager::WindowInfo> windows;
 };
+
+bool hasInvalidGeometry(int x, int y, int w, int h)
+{
+    return (w <= 0 || h <= 0
+        || x <= -32000 || x >= 32000
+        || y <= -32000 || y >= 32000);
+}
 
 QString toQString(const wchar_t* src)
 {
@@ -80,16 +134,16 @@ BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam)
     const QString imageLower = imagePath.toLower();
     const QString imageExeLower = QFileInfo(imagePath).fileName().toLower();
 
-    // Skip processes on the ignore list
-    if (ignoreListInternal().contains(imageExeLower, Qt::CaseInsensitive)) {
-        return TRUE;
-    }
-    // Skip TeknoLoaders (launcher/loader processes that are not the game itself)
-    if (teknoLoaderListInternal().contains(imageExeLower, Qt::CaseInsensitive)) {
+    if (imageLower != ctx->targetPathLower && imageExeLower != ctx->targetExeLower) {
         return TRUE;
     }
 
-    if (imageLower != ctx->targetPathLower && imageExeLower != ctx->targetExeLower) {
+    // The filter lists only exclude *other* processes; an explicitly selected
+    // target (e.g. dolphin.exe) must still be found.
+    const bool explicitPathMatch = imageLower == ctx->targetPathLower;
+    if (!explicitPathMatch
+        && (ignoreListInternal().contains(imageExeLower, Qt::CaseInsensitive)
+            || teknoLoaderListInternal().contains(imageExeLower, Qt::CaseInsensitive))) {
         return TRUE;
     }
 
@@ -161,11 +215,18 @@ bool WindowManager::scanWindowsForTarget()
     m_scanned = std::move(ctx.windows);
 
     std::sort(m_scanned.begin(), m_scanned.end(), [](const WindowInfo& a, const WindowInfo& b) {
-        return (a.w * a.h) > (b.w * b.h);
+        if (a.visible != b.visible) return a.visible > b.visible;
+        return static_cast<qint64>(a.w) * a.h > static_cast<qint64>(b.w) * b.h;
     });
 
     if (!m_scanned.empty()) {
         m_activeWindow = m_scanned.front().hwnd;
+        for (const auto& win : m_scanned) {
+            if (win.visible && !hasInvalidGeometry(win.x, win.y, win.w, win.h)) {
+                m_activeWindow = win.hwnd;
+                break;
+            }
+        }
         m_lastMessage = QString("Found %1 window(s) for target executable.").arg(m_scanned.size());
         Logger::instance().info(
             "Scan found " + std::to_string(m_scanned.size()) + " window(s). Active HWND: " +
@@ -288,24 +349,115 @@ bool WindowManager::moveToMonitor(int monitorIndex)
         return false;
     }
 
+    HWND hwnd = reinterpret_cast<HWND>(m_activeWindow);
+
     const auto mon = MonitorHelper::getMonitorWorkArea(monitorIndex);
     if (!mon) {
         m_lastMessage = QString("Monitor %1 is not available.").arg(monitorIndex);
         return false;
     }
 
+    // Restoring first avoids minimized/off-screen geometry values like
+    // x=-32768, w=65535, h=0 when moving games between monitors.
+    if (IsIconic(hwnd)) {
+        ShowWindow(hwnd, SW_RESTORE);
+    }
+
     RECT rect{};
-    if (!GetWindowRect(reinterpret_cast<HWND>(m_activeWindow), &rect)) {
+    if (!GetWindowRect(hwnd, &rect)) {
         m_lastMessage = "Failed to read current window rectangle.";
         return false;
     }
 
-    const int w = rect.right - rect.left;
-    const int h = rect.bottom - rect.top;
-    const int x = mon->x + (mon->w - w) / 2;
-    const int y = mon->y + (mon->h - h) / 2;
+    int w = rect.right - rect.left;
+    int h = rect.bottom - rect.top;
+    bool usedFallbackRect = false;
 
-    return applyRect(m_activeWindow, x, y, w, h, false);
+    const bool invalidRect = hasInvalidGeometry(rect.left, rect.top, w, h);
+
+    if (invalidRect) {
+        // Try another visible scanned window first. Some games expose multiple
+        // top-level windows and the first one can be a transient helper window.
+        for (const auto& candidate : m_scanned) {
+            if (!candidate.visible || candidate.hwnd == m_activeWindow)
+                continue;
+
+            const HWND candHwnd = reinterpret_cast<HWND>(candidate.hwnd);
+            RECT candRect{};
+            if (!GetWindowRect(candHwnd, &candRect))
+                continue;
+
+            const int cw = candRect.right - candRect.left;
+            const int ch = candRect.bottom - candRect.top;
+            const bool candidateInvalid = hasInvalidGeometry(candRect.left, candRect.top, cw, ch);
+
+            if (!candidateInvalid) {
+                m_activeWindow = candidate.hwnd;
+                hwnd = candHwnd;
+                rect = candRect;
+                w = cw;
+                h = ch;
+
+                Logger::instance().info(
+                    "moveToMonitor: switched active window to visible candidate HWND " +
+                    std::to_string(m_activeWindow),
+                    "WindowManager");
+                break;
+            }
+        }
+
+        const bool stillInvalid = hasInvalidGeometry(rect.left, rect.top, w, h);
+
+        if (stillInvalid) {
+        // If the live rect is invalid, use saved profile size when available,
+        // otherwise fall back to monitor work area size.
+        const auto profile = AppConfig::instance().currentWindowProfile();
+        if (profile && profile->hasProfile && profile->w > 0 && profile->h > 0) {
+            w = profile->w;
+            h = profile->h;
+        } else {
+            w = mon->w;
+            h = mon->h;
+        }
+
+        Logger::instance().warn(
+            "moveToMonitor: invalid source geometry detected, using fallback size " +
+            std::to_string(w) + "x" + std::to_string(h),
+            "WindowManager");
+            usedFallbackRect = true;
+        }
+    }
+
+    // For fallback rects, anchor at monitor origin to guarantee visibility.
+    const int x = usedFallbackRect ? mon->x : (mon->x + (mon->w - w) / 2);
+    const int y = usedFallbackRect ? mon->y : (mon->y + (mon->h - h) / 2);
+
+    const bool ok = applyRect(m_activeWindow, x, y, w, h, false);
+    if (ok) {
+        ShowWindow(hwnd, SW_SHOW);
+        BringWindowToTop(hwnd);
+
+        // Some games immediately re-position their surface. Re-assert briefly,
+        // similar to stabilizer behavior, but only during this explicit move.
+        for (int i = 0; i < 3; ++i) {
+            Sleep(120);
+            RECT now{};
+            if (!GetWindowRect(hwnd, &now))
+                break;
+
+            const int nw = now.right - now.left;
+            const int nh = now.bottom - now.top;
+            const bool nowInvalid = hasInvalidGeometry(now.left, now.top, nw, nh);
+            const int actualMonitor = MonitorHelper::getMonitorIndexFromWindow(hwnd);
+            if (!nowInvalid && actualMonitor == monitorIndex)
+                break;
+
+            applyRect(m_activeWindow, mon->x, mon->y, w, h, false);
+            ShowWindow(hwnd, SW_SHOW);
+            BringWindowToTop(hwnd);
+        }
+    }
+    return ok;
 }
 
 bool WindowManager::nudge(int dx, int dy, int dw, int dh, bool symmetric)
@@ -326,8 +478,9 @@ bool WindowManager::nudge(int dx, int dy, int dw, int dh, bool symmetric)
     int h = (rect.bottom - rect.top) + dh;
 
     if (symmetric) {
-        x -= dw;
-        y -= dh;
+        // Grow/shrink around the centre: each edge moves by half the delta.
+        x -= dw / 2;
+        y -= dh / 2;
     }
 
     w = std::max(100, w);
@@ -698,18 +851,134 @@ bool WindowManager::resetAll()
 // Process control
 // ---------------------------------------------------------------------------
 
+void WindowManager::snapshotProcesses()
+{
+    m_preLaunchPids.clear();
+    m_batchLaunchPending = true;
+
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) return;
+
+    PROCESSENTRY32W entry{};
+    entry.dwSize = sizeof(entry);
+    if (Process32FirstW(snapshot, &entry)) {
+        do {
+            m_preLaunchPids.insert(static_cast<uint32_t>(entry.th32ProcessID));
+        } while (Process32NextW(snapshot, &entry));
+    }
+    CloseHandle(snapshot);
+
+    Logger::instance().info(
+        "Pre-launch snapshot: " + std::to_string(m_preLaunchPids.size()) + " running processes",
+        "WindowManager");
+}
+
+bool WindowManager::pollForBatchChild()
+{
+    if (!m_batchLaunchPending) return false;
+
+    // Processes that are just noise from cmd / batch execution
+    static const QStringList noise{
+        "cmd.exe", "conhost.exe", "werfault.exe", "taskhostw.exe", "timeout.exe"
+    };
+
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) return false;
+
+    struct FindWindowCtx { DWORD pid; HWND hwnd; };
+
+    PROCESSENTRY32W entry{};
+    entry.dwSize = sizeof(entry);
+    bool found = false;
+
+    if (Process32FirstW(snapshot, &entry)) {
+        do {
+            const DWORD pid = entry.th32ProcessID;
+
+            // Skip processes that existed before launch
+            if (m_preLaunchPids.count(static_cast<uint32_t>(pid))) continue;
+
+            const QString name = QString::fromWCharArray(entry.szExeFile);
+            const QString nameLower = name.toLower();
+
+            // Filter out noise and ignored system processes
+            if (noise.contains(nameLower, Qt::CaseInsensitive)) continue;
+            if (ignoreListInternal().contains(nameLower, Qt::CaseInsensitive)) continue;
+
+            // Find a visible window owned by this PID
+            FindWindowCtx ctx{pid, nullptr};
+            EnumWindows([](HWND hwnd, LPARAM lp) -> BOOL {
+                auto* fc = reinterpret_cast<FindWindowCtx*>(lp);
+                DWORD wpid = 0;
+                GetWindowThreadProcessId(hwnd, &wpid);
+                if (wpid == fc->pid && IsWindowVisible(hwnd)) {
+                    fc->hwnd = hwnd;
+                    return FALSE; // stop enumeration
+                }
+                return TRUE;
+            }, reinterpret_cast<LPARAM>(&ctx));
+
+            if (ctx.hwnd) {
+                const QString fullPath = processImagePath(static_cast<qint64>(pid));
+                Logger::instance().info(
+                    "Batch child detected: " + name.toStdString() +
+                    " (PID: " + std::to_string(pid) + ")",
+                    "WindowManager");
+
+                // Switch the tracked target to the real game exe
+                m_targetExePath = fullPath.isEmpty() ? name : fullPath;
+                AppConfig::instance().setCurrentExePath(m_targetExePath);
+                AppConfig::instance().save();
+
+                m_sessionPids.insert(static_cast<uint32_t>(pid));
+                m_batchLaunchPending = false;
+                found = true;
+                break;
+            }
+
+        } while (Process32NextW(snapshot, &entry));
+    }
+    CloseHandle(snapshot);
+
+    if (found) {
+        // Immediately populate the window table
+        scanWindowsForTarget();
+    }
+    return found;
+}
+
 bool WindowManager::launchTarget()
 {
     if (m_targetExePath.trimmed().isEmpty()) {
-        m_lastMessage = "No executable selected.";
-        Logger::instance().warn("launchTarget: no executable selected", "WindowManager");
+        m_lastMessage = "No launch target selected.";
+        Logger::instance().warn("launchTarget: no launch target selected", "WindowManager");
         return false;
     }
     Logger::instance().info(
         "Launching: " + m_targetExePath.toStdString(), "WindowManager");
-    const QString workingDir = QFileInfo(m_targetExePath).absolutePath();
-    const bool ok = QProcess::startDetached(m_targetExePath, {}, workingDir);
-    m_lastMessage = ok ? "Executable launched." : "Failed to launch executable.";
+    const QFileInfo targetInfo(m_targetExePath);
+    const QString workingDir = targetInfo.absolutePath();
+
+    const bool isBatch =
+        targetInfo.suffix().compare("bat", Qt::CaseInsensitive) == 0 ||
+        targetInfo.suffix().compare("cmd", Qt::CaseInsensitive) == 0;
+
+    qint64 pid = 0;
+    bool ok = false;
+    if (isBatch) {
+        ok = QProcess::startDetached("cmd.exe", {"/c", m_targetExePath}, workingDir, &pid);
+    } else {
+        ok = QProcess::startDetached(m_targetExePath, {}, workingDir, &pid);
+    }
+
+    if (ok) {
+        m_sessionPids.clear();
+        if (pid > 0)
+            m_sessionPids.insert(static_cast<uint32_t>(pid));
+        m_launchTime = nowFileTime();
+    }
+
+    m_lastMessage = ok ? "Launch target started." : "Failed to launch target.";
     Logger::instance().info(
         ok ? "Launch succeeded" : "Launch failed", "WindowManager");
     return ok;
@@ -737,48 +1006,56 @@ int WindowManager::activeWindowMonitorIndex() const
 bool WindowManager::killTarget()
 {
     Logger::instance().info("killTarget called", "WindowManager");
-    int count = 0;
 
-    // Kill all known loader/companion processes (safety: skip ignored system apps)
-    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    // Snapshot every process, then let KillPlanner pick the ones that belong
+    // to this session. Unrelated loaders/emulators are left alone.
+    std::vector<KillPlanner::ProcInfo> procs;
+    const HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snapshot != INVALID_HANDLE_VALUE) {
         PROCESSENTRY32W entry{};
         entry.dwSize = sizeof(entry);
         if (Process32FirstW(snapshot, &entry)) {
             do {
-                const QString name = QString::fromWCharArray(entry.szExeFile).toLower();
-                if (ignoreListInternal().contains(name, Qt::CaseInsensitive)) continue;
-                if (teknoLoaderListInternal().contains(name, Qt::CaseInsensitive)) {
-                    HANDLE proc = OpenProcess(PROCESS_TERMINATE, FALSE, entry.th32ProcessID);
-                    if (proc) {
-                        TerminateProcess(proc, 1);
-                        CloseHandle(proc);
-                        ++count;
-                    }
-                }
+                KillPlanner::ProcInfo p;
+                p.pid = entry.th32ProcessID;
+                p.ppid = entry.th32ParentProcessID;
+                p.created = processCreationTime(entry.th32ProcessID);
+                p.exeLower = QString::fromWCharArray(entry.szExeFile).toLower().toStdString();
+                p.pathLower = processImagePath(entry.th32ProcessID).toLower().toStdString();
+                procs.push_back(std::move(p));
             } while (Process32NextW(snapshot, &entry));
         }
         CloseHandle(snapshot);
     }
 
-    // Kill the active game PID if it is not a system process
+    KillPlanner::Request req;
+    req.rootPids = m_sessionPids;
+    req.targetPathLower = QDir::toNativeSeparators(m_targetExePath).toLower().toStdString();
+    req.targetExeLower = QFileInfo(m_targetExePath).fileName().toLower().toStdString();
+    req.launchTime = m_launchTime;
+    req.ignoreExes = toLowerSet(ignoreListInternal());
+    req.loaderExes = toLowerSet(teknoLoaderListInternal());
+    req.selfPid = GetCurrentProcessId();
+
     if (m_activeWindow && IsWindow(reinterpret_cast<HWND>(m_activeWindow))) {
         DWORD pid = 0;
         GetWindowThreadProcessId(reinterpret_cast<HWND>(m_activeWindow), &pid);
-        if (pid > 0) {
-            const QString exeName = QFileInfo(processImagePath(static_cast<qint64>(pid))).fileName().toLower();
-            if (!ignoreListInternal().contains(exeName, Qt::CaseInsensitive)) {
-                HANDLE proc = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
-                if (proc) {
-                    TerminateProcess(proc, 1);
-                    CloseHandle(proc);
-                    ++count;
-                }
-            }
-        }
-        m_activeWindow = 0;
+        if (pid > 0)
+            req.rootPids.insert(pid);
     }
 
+    int count = 0;
+    for (const uint32_t pid : KillPlanner::plan(procs, req)) {
+        if (const HANDLE proc = OpenProcess(PROCESS_TERMINATE, FALSE, pid)) {
+            if (TerminateProcess(proc, 1))
+                ++count;
+            CloseHandle(proc);
+        }
+    }
+
+    m_sessionPids.clear();
+    m_launchTime = 0;
+    m_activeWindow = 0;
     m_scanned.clear();
     m_lastMessage = QString("Killed %1 process(es).").arg(count);
     Logger::instance().info(
@@ -834,4 +1111,179 @@ QString WindowManager::windowClass(quintptr hwndRaw)
         return {};
     }
     return toQString(cls);
+}
+
+// ---------------------------------------------------------------------------
+// Fit to monitor
+// ---------------------------------------------------------------------------
+
+WindowManager::PrimaryWindow WindowManager::findPrimaryWindow() const
+{
+    PrimaryWindow best;
+    if (m_targetExePath.trimmed().isEmpty())
+        return best;
+
+    ScanContext ctx;
+    ctx.targetPathLower = m_targetExePath.toLower();
+    ctx.targetExeLower = QFileInfo(m_targetExePath).fileName().toLower();
+    EnumWindows(EnumWindowsProc, reinterpret_cast<LPARAM>(&ctx));
+
+    qint64 bestScore = -1;
+    for (const auto& w : ctx.windows) {
+        if (isIgnoredHelperClass(w.className))
+            continue;
+
+        const HWND hwnd = reinterpret_cast<HWND>(w.hwnd);
+        const qint64 area = static_cast<qint64>(w.w) * w.h;
+        const bool titled = w.title != "<untitled>";
+        const bool ready = w.visible && !IsIconic(hwnd) && area >= 10000
+                           && !hasInvalidGeometry(w.x, w.y, w.w, w.h);
+
+        // Ready windows beat everything, then titled ones, then the largest.
+        const qint64 score = (ready ? (qint64(1) << 60) : 0)
+                           + (titled ? (qint64(1) << 59) : 0)
+                           + std::max<qint64>(area, 0);
+        if (score > bestScore) {
+            bestScore = score;
+            best.hwnd = w.hwnd;
+            best.ready = ready;
+            best.rect = Fit::Rect::fromXYWH(w.x, w.y, w.w, w.h);
+        }
+    }
+    return best;
+}
+
+bool WindowManager::measureFit(const FitRequest& request, FitMeasurement& out)
+{
+    out = FitMeasurement{};
+
+    if (!ensureActiveWindow()) {
+        out.error = m_lastMessage;
+        return false;
+    }
+
+    const HWND hwnd = reinterpret_cast<HWND>(m_activeWindow);
+    if (IsIconic(hwnd)) {
+        out.error = "The window is minimized. Restore it first.";
+        return false;
+    }
+
+    RECT outer{};
+    RECT clientLocal{};
+    if (!GetWindowRect(hwnd, &outer) || !GetClientRect(hwnd, &clientLocal)) {
+        out.error = "Failed to read the window rectangle.";
+        return false;
+    }
+
+    POINT origin{0, 0};
+    ClientToScreen(hwnd, &origin);
+    const RECT client{origin.x, origin.y,
+                      origin.x + (clientLocal.right - clientLocal.left),
+                      origin.y + (clientLocal.bottom - clientLocal.top)};
+
+    RECT frame = outer;
+    DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &frame, sizeof(frame));
+
+    const int monitorIndex = request.monitorIndex > 0
+        ? request.monitorIndex
+        : MonitorHelper::getMonitorIndexFromWindow(hwnd);
+    const auto monitor = MonitorHelper::getMonitorGeometry(monitorIndex);
+    const auto work = MonitorHelper::getMonitorWorkArea(monitorIndex);
+    if (!monitor || !work) {
+        out.error = QString("Monitor %1 is not available.").arg(monitorIndex);
+        return false;
+    }
+
+    const LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE);
+
+    out.hwnd = m_activeWindow;
+    out.title = windowTitle(m_activeWindow);
+    out.className = windowClass(m_activeWindow);
+    out.hasFrame = (style & (WS_CAPTION | WS_THICKFRAME)) != 0;
+    out.outer = toFitRect(outer);
+    out.client = toFitRect(client);
+    out.visibleFrame = toFitRect(frame);
+    out.monitorIndex = monitorIndex;
+    out.monitor = Fit::Rect::fromXYWH(monitor->x, monitor->y, monitor->w, monitor->h);
+    out.target = request.workArea
+        ? Fit::Rect::fromXYWH(work->x, work->y, work->w, work->h)
+        : out.monitor;
+    out.stripFrame = request.stripFrame && out.hasFrame;
+    out.plan = Fit::compute({out.outer, out.client, out.target, out.stripFrame});
+    out.valid = true;
+    return true;
+}
+
+bool WindowManager::applyFit(const FitRequest& request)
+{
+    FitMeasurement m;
+    if (!measureFit(request, m)) {
+        m_lastMessage = m.error;
+        return false;
+    }
+
+    const HWND hwnd = reinterpret_cast<HWND>(m.hwnd);
+
+    // A maximized window ignores SetWindowPos geometry; start from normal state.
+    if (IsZoomed(hwnd)) {
+        ShowWindow(hwnd, SW_RESTORE);
+        Sleep(80);
+    }
+
+    if (m.stripFrame) {
+        LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE);
+        style &= ~(WS_CAPTION | WS_THICKFRAME);
+        SetWindowLongPtr(hwnd, GWL_STYLE, style);
+
+        LONG_PTR exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+        exStyle &= ~(WS_EX_DLGMODALFRAME | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE | WS_EX_WINDOWEDGE);
+        SetWindowLongPtr(hwnd, GWL_EXSTYLE, exStyle);
+    }
+
+    // Measure the real insets *after* the style change and correct; repeat a
+    // couple of times because some games nudge their window right after a move.
+    FitRequest pass = request;
+    pass.stripFrame = false;
+    constexpr int kMaxPasses = 3;
+    for (int i = 0; i < kMaxPasses; ++i) {
+        if (!measureFit(pass, m)) {
+            m_lastMessage = m.error;
+            return false;
+        }
+        if (!m.plan.needsChange())
+            break;
+
+        const Fit::Rect& r = m.plan.desiredOuter;
+        Logger::instance().info(
+            "applyFit pass " + std::to_string(i + 1) + ": dx=" + std::to_string(m.plan.dx) +
+            " dy=" + std::to_string(m.plan.dy) + " dw=" + std::to_string(m.plan.dw) +
+            " dh=" + std::to_string(m.plan.dh), "WindowManager");
+        SetWindowPos(hwnd, HWND_TOP, r.left, r.top, r.width(), r.height(),
+                     SWP_NOOWNERZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        Sleep(120);
+    }
+
+    if (!measureFit(pass, m)) {
+        m_lastMessage = m.error;
+        return false;
+    }
+
+    const bool exact = !m.plan.needsChange();
+    if (exact) {
+        m_lastMessage = QString("Picture fits monitor %1 exactly (%2x%3 at %4,%5).")
+            .arg(m.monitorIndex).arg(m.client.width()).arg(m.client.height())
+            .arg(m.client.left).arg(m.client.top);
+    } else {
+        m_lastMessage = QString("Applied, but the game keeps resizing: still off by "
+                                "x%1 y%2 w%3 h%4.")
+            .arg(m.plan.dx).arg(m.plan.dy).arg(m.plan.dw).arg(m.plan.dh);
+    }
+
+    // Remember the result so "Force saved settings" can restore it. Only valid
+    // when the frame is gone, because applying a saved rect also strips the frame.
+    if (!m.hasFrame) {
+        AppConfig::instance().saveCurrentWindowProfile(
+            m.outer.left, m.outer.top, m.outer.width(), m.outer.height());
+    }
+    return exact;
 }

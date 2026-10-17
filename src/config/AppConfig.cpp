@@ -8,7 +8,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QStandardPaths>
+#include <QSaveFile>
 
 AppConfig& AppConfig::instance()
 {
@@ -18,10 +18,16 @@ AppConfig& AppConfig::instance()
 
 AppConfig::AppConfig() = default;
 
+void AppConfig::setConfigPathOverride(const QString& path)
+{
+    m_configPathOverride = path;
+}
+
 QString AppConfig::configFilePath() const
 {
-    const QString dir =
-        QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    if (!m_configPathOverride.isEmpty())
+        return m_configPathOverride;
+    const QString dir = QCoreApplication::applicationDirPath();
     QDir{}.mkpath(dir);
     return dir + "/windowmanager.json";
 }
@@ -56,6 +62,25 @@ bool AppConfig::load()
     const QJsonObject root = doc.object();
     m_currentExePath = root["lastExePath"].toString();
 
+    m_games.clear();
+    for (const auto& v : root["games"].toArray()) {
+        const QJsonObject obj = v.toObject();
+        const QString path = obj["ApplicationPath"].toString();
+        if (path.isEmpty()) continue;
+
+        GameEntry game;
+        game.applicationPath = path;
+        game.captureDir      = obj["CaptureDir"].toString();
+        game.ebootIsoPath    = obj["EbootIsoPath"].toString();
+        game.gameApplication = obj["GameApplication"].toString();
+        game.id              = obj["Id"].toString();
+        game.isPatchable     = obj["IsPatchable"].toString("false");
+        game.launcherType    = obj["LauncherType"].toString("STANDARD");
+        game.savedName       = obj["SavedName"].toString();
+        game.snapshotDir     = obj["SnapshotDir"].toString();
+        m_games.insert(path, game);
+    }
+
     m_profiles.clear();
     for (const auto& v : root["profiles"].toArray()) {
         const QJsonObject obj = v.toObject();
@@ -78,6 +103,21 @@ bool AppConfig::load()
 
 bool AppConfig::save()
 {
+    QJsonArray games;
+    for (auto it = m_games.constBegin(); it != m_games.constEnd(); ++it) {
+        QJsonObject obj;
+        obj["ApplicationPath"] = it.value().applicationPath;
+        obj["CaptureDir"]      = it.value().captureDir;
+        obj["EbootIsoPath"]    = it.value().ebootIsoPath;
+        obj["GameApplication"] = it.value().gameApplication;
+        obj["Id"]              = it.value().id;
+        obj["IsPatchable"]     = it.value().isPatchable;
+        obj["LauncherType"]    = it.value().launcherType;
+        obj["SavedName"]       = it.value().savedName;
+        obj["SnapshotDir"]     = it.value().snapshotDir;
+        games.append(obj);
+    }
+
     QJsonArray profiles;
     for (auto it = m_profiles.constBegin(); it != m_profiles.constEnd(); ++it) {
         QJsonObject obj;
@@ -92,16 +132,23 @@ bool AppConfig::save()
 
     QJsonObject root;
     root["lastExePath"] = m_currentExePath;
+    root["games"]       = games;
     root["profiles"]    = profiles;
 
-    QFile f(configFilePath());
-    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+    // QSaveFile writes to a temp file and renames on commit, so a crash
+    // mid-write can no longer leave a truncated config behind.
+    QSaveFile f(configFilePath());
+    if (!f.open(QIODevice::WriteOnly)) {
         Logger::instance().error(
             "Failed to write config: " + f.fileName().toStdString(), "AppConfig");
         return false;
     }
     f.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
-    f.close();
+    if (!f.commit()) {
+        Logger::instance().error(
+            "Failed to commit config: " + f.fileName().toStdString(), "AppConfig");
+        return false;
+    }
 
     Logger::instance().info("Config saved.", "AppConfig");
     return true;
@@ -121,6 +168,33 @@ QString AppConfig::currentExePath() const { return m_currentExePath; }
 void AppConfig::setCurrentExePath(const QString& path)
 {
     m_currentExePath = path;
+}
+
+QList<AppConfig::GameEntry> AppConfig::games() const
+{
+    return m_games.values();
+}
+
+std::optional<AppConfig::GameEntry> AppConfig::gameByPath(const QString& applicationPath) const
+{
+    auto it = m_games.constFind(applicationPath);
+    if (it == m_games.constEnd()) return std::nullopt;
+    return *it;
+}
+
+std::optional<AppConfig::GameEntry> AppConfig::currentGame() const
+{
+    if (m_currentExePath.isEmpty()) return std::nullopt;
+    return gameByPath(m_currentExePath);
+}
+
+void AppConfig::saveGame(const GameEntry& game)
+{
+    if (game.applicationPath.isEmpty())
+        return;
+
+    m_games.insert(game.applicationPath, game);
+    save();
 }
 
 // ---------------------------------------------------------------------------

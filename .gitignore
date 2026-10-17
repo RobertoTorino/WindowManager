@@ -409,4 +409,4 @@ FodyWeavers.xsd
 # JetBrains
 .idea
 cmake-build-*
-README-AHK.md
+/AHK Logic/

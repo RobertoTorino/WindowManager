@@ -4,7 +4,7 @@ setlocal
 set ROOT=%~dp0..
 set BUILD_DIR=%ROOT%\build\windows-clang-debug
 set EXE=%BUILD_DIR%\WindowManager.exe
-set WINDEPLOYQT=C:\Qt\6.10.2\msvc2022_64\bin\windeployqt6.exe
+set WINDEPLOYQT=C:\Qt\6.11.1\msvc2022_64\bin\windeployqt6.exe
 
 echo ================================
 echo  WindowManager - Build Script

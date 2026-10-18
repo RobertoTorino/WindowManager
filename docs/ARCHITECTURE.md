@@ -6,7 +6,7 @@ src/
   MainWindow.{h,cpp}            Composes the UI (game bar, action row, table, tabs, menus, status bar)
   WindowManagerController.*     Qt-facing facade over the window logic; emits statusChanged()
   config/AppConfig.*            windowmanager.json (games, last target, per-game profiles)
-  core/Logger.*                 Thread-safe rolling file logger
+  core/Logger.*                 Thread-safe rolling file logger (app log + one log per game)
   core/Utilities.*              String / path / timestamp helpers
   window/WindowManager.*        Win32 logic: scan, move, resize, styles, launch, kill
   window/MonitorHelper.*        Monitor enumeration and geometry
@@ -23,7 +23,9 @@ src/
   ui/GameRegistry.*             Saved-game helpers (names, entries, snapshot folders)
   ui/FitDialog.*                "Fit window to monitor" popup (measurements + correction)
   ui/ScaledView.*               Downscaled view: overlay window + DWM thumbnail of the game
-  ui/InfoDialogs.*              Info and About dialogs
+  ui/InfoDialogs.*              About dialog
+  ui/HelpDialog.*               Help > Help topics: topic list + search over docs/help/*.md (embedded via the .qrc)
+  ui/LogViewerDialog.*          File > View logs...: app and per-game log viewer
 tests/                          QtTest suites (see below)
 resources/                      Icon, arrow SVGs used by the stylesheet, Windows .rc
 ```

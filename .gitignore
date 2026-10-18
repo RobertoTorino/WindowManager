@@ -410,3 +410,6 @@ FodyWeavers.xsd
 .idea
 cmake-build-*
 /AHK Logic/
+
+# MkDocs output
+/site/

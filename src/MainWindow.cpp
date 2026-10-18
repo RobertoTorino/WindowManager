@@ -8,7 +8,9 @@
 #include "ui/GameBar.h"
 #include "ui/ScaledView.h"
 #include "ui/GameRegistry.h"
+#include "ui/HelpDialog.h"
 #include "ui/InfoDialogs.h"
+#include "ui/LogViewerDialog.h"
 #include "ui/SnapshotCapture.h"
 #include "ui/Theme.h"
 #include "ui/WindowTable.h"
@@ -224,6 +226,9 @@ void MainWindow::buildMenus()
     file->addAction("Open &config file", this, []() {
         QProcess::startDetached("notepad.exe", {AppConfig::instance().configPath()});
     });
+    file->addAction("View &logs...", QKeySequence(Qt::CTRL | Qt::Key_L), this, [this]() {
+        LogViewerDialog(this).exec();
+    });
     file->addSeparator();
     file->addAction("E&xit", QKeySequence(Qt::CTRL | Qt::Key_Q), this, &QWidget::close);
 
@@ -246,7 +251,10 @@ void MainWindow::buildMenus()
                     this, &MainWindow::moveAppToOppositeMonitor);
 
     auto *help = menuBar()->addMenu("&Help");
-    help->addAction("&Info", QKeySequence::HelpContents, this, [this]() { InfoDialogs::showInfo(this); });
+    help->addAction("&Help topics", QKeySequence::HelpContents, this, [this]() { HelpDialog::open(this); });
+    help->addAction("&Keyboard shortcuts", this, [this]() { HelpDialog::open(this, "shortcuts"); });
+    help->addAction("&Logs and troubleshooting", this, [this]() { HelpDialog::open(this, "logs-and-troubleshooting"); });
+    help->addSeparator();
     help->addAction("&About", this, [this]() { InfoDialogs::showAbout(this); });
 }
 

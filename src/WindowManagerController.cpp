@@ -3,7 +3,27 @@
 #include "config/AppConfig.h"
 #include "core/Logger.h"
 
+#include <QFileInfo>
+
 #include <Windows.h>
+
+namespace {
+
+// Routes the logger to the game's own file (named after its saved name).
+void selectLogGame(const QString& exePath)
+{
+    if (exePath.isEmpty()) {
+        Logger::instance().setGame({});
+        return;
+    }
+    QString name = QFileInfo(exePath).completeBaseName();
+    if (const auto game = AppConfig::instance().gameByPath(exePath);
+        game && !game->savedName.isEmpty())
+        name = game->savedName;
+    Logger::instance().setGame(name.toStdString());
+}
+
+} // namespace
 
 WindowManagerController::WindowManagerController(QObject *parent)
     : QObject(parent)
@@ -13,6 +33,7 @@ WindowManagerController::WindowManagerController(QObject *parent)
     AppConfig::instance().load();
     const QString lastExe = AppConfig::instance().currentExePath();
     if (!lastExe.isEmpty()) {
+        selectLogGame(lastExe);
         Logger::instance().info(
             "Restoring last executable: " + lastExe.toStdString(),
             "WindowManagerController");
@@ -82,6 +103,7 @@ const std::vector<WindowManager::WindowInfo>& WindowManagerController::scannedWi
 
 void WindowManagerController::setTargetExecutable(const QString& exePath)
 {
+    selectLogGame(exePath);
     Logger::instance().info(
         "setTargetExecutable: " + exePath.toStdString(), "WindowManagerController");
     if (exePath != m_windowManager.targetExecutable())
@@ -215,6 +237,14 @@ void WindowManagerController::publishStatus(const QString& prefix)
 {
     const QString detail = m_windowManager.lastMessage();
     m_statusText = prefix.isEmpty() ? detail : prefix + ": " + detail;
+
+    // Every user action ends up here, so this is what gives each game's log its history.
+    const bool failed = m_statusText.contains("fail", Qt::CaseInsensitive);
+    auto& log = Logger::instance();
+    if (failed)
+        log.warn(m_statusText.toStdString(), "Action");
+    else
+        log.info(m_statusText.toStdString(), "Action");
     emit statusChanged();
 }
 

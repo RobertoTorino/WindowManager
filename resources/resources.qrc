@@ -4,5 +4,13 @@
     <file>window-manager-icon.png</file>
     <file>arrow-up.svg</file>
     <file>arrow-down.svg</file>
+    <file alias="help/getting-started.md">../docs/help/getting-started.md</file>
+    <file alias="help/games-and-launching.md">../docs/help/games-and-launching.md</file>
+    <file alias="help/window-controls.md">../docs/help/window-controls.md</file>
+    <file alias="help/fit-to-monitor.md">../docs/help/fit-to-monitor.md</file>
+    <file alias="help/downscaled-view.md">../docs/help/downscaled-view.md</file>
+    <file alias="help/logs-and-troubleshooting.md">../docs/help/logs-and-troubleshooting.md</file>
+    <file alias="help/shortcuts.md">../docs/help/shortcuts.md</file>
+    <file alias="help/reference.md">../docs/help/reference.md</file>
   </qresource>
 </RCC>

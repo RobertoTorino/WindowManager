@@ -1,5 +1,6 @@
 #include "Logger.h"
 
+#include <cctype>
 #include <chrono>
 #include <ctime>
 #include <fstream>
@@ -38,17 +39,70 @@ Logger& Logger::instance()
     return s;
 }
 
+// "<name>.log" -> "<name>_old.log" in the same folder
+std::filesystem::path Logger::oldPathFor(const std::filesystem::path& file)
+{
+    return file.parent_path() / (file.stem().string() + "_old" + file.extension().string());
+}
+
+// Game names come from user input; keep the file name safe on Windows.
+static std::string safeFileName(const std::string& name)
+{
+    std::string out;
+    for (const unsigned char c : name)
+        out += (std::isalnum(c) || c == '_' || c == '-' || c == '.' || c == ' ') ? char(c) : '_';
+    return out.empty() ? std::string("game") : out;
+}
+
 Logger::Logger()
     : m_logFile("windowmanager.log")
-    , m_oldLogFile("windowmanager_old.log")
 {}
 
 void Logger::setLogFile(const std::filesystem::path& path)
 {
     std::lock_guard lock(m_mutex);
-    m_logFile    = path;
-    m_oldLogFile = path.parent_path() /
-                   (path.stem().string() + "_old" + path.extension().string());
+    m_logFile = path;
+}
+
+void Logger::setGame(const std::string& name)
+{
+    std::lock_guard lock(m_mutex);
+    if (name == m_game)
+        return;
+    m_game = name;
+    if (!m_game.empty()) {
+        std::error_code ec;
+        std::filesystem::create_directories(gameLogPathLocked(m_game).parent_path(), ec);
+    }
+}
+
+std::string Logger::currentGame()
+{
+    std::lock_guard lock(m_mutex);
+    return m_game;
+}
+
+std::filesystem::path Logger::gameLogPathLocked(const std::string& name) const
+{
+    return m_logFile.parent_path() / "logs" / (safeFileName(name) + ".log");
+}
+
+std::filesystem::path Logger::gameLogDirectory()
+{
+    std::lock_guard lock(m_mutex);
+    return m_logFile.parent_path() / "logs";
+}
+
+std::filesystem::path Logger::gameLogPath(const std::string& name)
+{
+    std::lock_guard lock(m_mutex);
+    return gameLogPathLocked(name);
+}
+
+std::filesystem::path Logger::appLogPath()
+{
+    std::lock_guard lock(m_mutex);
+    return m_logFile;
 }
 
 void Logger::setMaxSize(std::size_t bytes)
@@ -65,24 +119,28 @@ void Logger::log(Level level, const std::string& message, const std::string& sou
         levelToString(level)     + "] [" +
         (source.empty() ? "?" : source) + "] " +
         message + "\n";
-    writeToFile(entry);
+    writeToFile(m_logFile, entry);
+    if (!m_game.empty())
+        writeToFile(gameLogPathLocked(m_game), entry);
 }
 
-void Logger::writeToFile(const std::string& text)
+void Logger::writeToFile(const std::filesystem::path& file, const std::string& text)
 {
-    std::ofstream ofs(m_logFile, std::ios::app);
+    std::ofstream ofs(file, std::ios::app);
     if (ofs)
         ofs << text;
     ofs.close();
-    rotateLogs();
+    rotateLogs(file);
 }
 
-void Logger::rotateLogs()
+void Logger::rotateLogs(const std::filesystem::path& file)
 {
     std::error_code ec;
-    const auto size = std::filesystem::file_size(m_logFile, ec);
-    if (!ec && size > m_maxSize)
-        std::filesystem::rename(m_logFile, m_oldLogFile, ec);
+    const auto size = std::filesystem::file_size(file, ec);
+    if (ec || size <= m_maxSize)
+        return;
+    const auto old = oldPathFor(file);
+    std::filesystem::rename(file, old, ec);
 }
 
 void Logger::debug(const std::string& msg, const std::string& src) { log(Level::Debug, msg, src); }

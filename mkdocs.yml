@@ -1,0 +1,16 @@
+site_name: WindowManager
+site_description: Tame the windows of games and emulators on Windows.
+docs_dir: docs
+theme:
+  name: material   # needs `pip install mkdocs-material`; remove this block for the plain default theme
+nav:
+  - Help:
+      - Getting started: help/getting-started.md
+      - Games and launching: help/games-and-launching.md
+      - Window controls: help/window-controls.md
+      - Fit to monitor: help/fit-to-monitor.md
+      - Downscaled view: help/downscaled-view.md
+      - Logs and troubleshooting: help/logs-and-troubleshooting.md
+      - Shortcuts: help/shortcuts.md
+      - Reference: help/reference.md
+  - Code layout: ARCHITECTURE.md

@@ -13,6 +13,7 @@ window from drifting, and grab screenshots. Built with C++20 and Qt 6.
 - [Keyboard shortcuts](#keyboard-shortcuts)
 - [Files it creates](#files-it-creates)
 - [Safety notes](#safety-notes)
+- [Help pages](docs/help/getting-started.md) (also shown in the app under Help)
 - [Building and testing](BUILD.md)
 - [Code layout](docs/ARCHITECTURE.md)
 
@@ -220,9 +221,9 @@ looks sharper without anything falling off the screen; see
 ### Menus
 | Menu | Items |
 |---|---|
-| **File** | Add game..., Open config file, Exit |
+| **File** | Add game..., Open config file, View logs..., Exit |
 | **View** | Always on top, Confirm before terminating a game, Check window fit after launching a game, Fit window to monitor..., Stop downscaled view, Move this app to the other monitor |
-| **Help** | Info (a reference of window states and styles), About |
+| **Help** | Help topics (F1), Keyboard shortcuts, Logs and troubleshooting, About |
 
 ---
 
@@ -235,7 +236,8 @@ looks sharper without anything falling off the screen; see
 | Ctrl+Alt+D | Stop the downscaled view (global: works even when this app is not focused) |
 | Ctrl+M | Move this app's window to the other monitor |
 | Ctrl+O | Add game... |
-| F1 | Info |
+| F1 | Help |
+| Ctrl+L | View logs... |
 | Ctrl+Q | Exit |
 
 ---
@@ -248,7 +250,8 @@ All next to `WindowManager.exe`:
 |---|---|
 | `windowmanager.json` | Saved games, the last target and per-game window profiles. Written atomically. |
 | `windowmanager.ini` | App window size/position, Always on top, the terminate-confirmation preference and the automatic fit check on/off. |
-| `windowmanager.log`, `windowmanager_old.log` | Rolling log (the old one is the previous file after rotation). |
+| `windowmanager.log`, `windowmanager_old.log` | Rolling application log (the old one is the previous file after rotation). |
+| `logs/<game>.log`, `logs/<game>_old.log` | Rolling log per game. View all logs in the app with **File > View logs...** (Ctrl+L). |
 | `snapshots/<game id>/` | Screenshots from the Capture tab. |
 
 ---

@@ -28,6 +28,7 @@ public:
         QString launcherType{"STANDARD"};
         QString savedName;
         QString snapshotDir;
+        bool    helixConfirmed{false};   // checked for an FSR 3.1 DLL: listed on the HelixSR tab
     };
 
     struct WindowProfile

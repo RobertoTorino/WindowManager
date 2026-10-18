@@ -2,12 +2,14 @@
 
 #include "WindowManagerController.h"
 #include "config/AppConfig.h"
+#include "core/BuildInfo.h"
 #include "core/Logger.h"
 #include "ui/ControlPanels.h"
 #include "ui/FitDialog.h"
 #include "ui/GameBar.h"
 #include "ui/ScaledView.h"
 #include "ui/GameRegistry.h"
+#include "ui/HelixPanel.h"
 #include "ui/HelpDialog.h"
 #include "ui/InfoDialogs.h"
 #include "ui/LogViewerDialog.h"
@@ -60,7 +62,7 @@ MainWindow::MainWindow(QWidget *parent)
     , m_snapshots(new SnapshotCapture(m_controller, this))
     , m_view(new ScaledView(this))
 {
-    setWindowTitle("WindowManager");
+    setWindowTitle(BuildInfo::windowTitle());
     setWindowIcon(QIcon(":/window-manager-icon.png"));
     setMinimumSize(880, 620);
     resize(980, 720);
@@ -85,6 +87,15 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(m_view, &ScaledView::message, this, [this](const QString &text) {
         m_detailLabel->setText(text);
+    });
+
+    // HelixSR tab
+    connect(m_helix, &HelixPanel::message, this, [this](const QString &text) {
+        m_detailLabel->setText(text);
+    });
+    connect(m_helix, &HelixPanel::runRequested, this, &MainWindow::runWithHelix);
+    connect(m_helix, &HelixPanel::updateAvailableChanged, this, [this](bool available) {
+        m_tabs->setTabText(m_tabs->indexOf(m_helix), available ? "HelixSR (update)" : "HelixSR");
     });
     connect(m_view, &ScaledView::runningChanged, this, [this](bool running) {
         if (running)   // keep this window above the full-screen overlay
@@ -154,7 +165,9 @@ void MainWindow::buildUi()
     m_tabs->addTab(presets,  "Presets");
     m_tabs->addTab(downscale, "Downscale");
     m_tabs->addTab(capture,  "Capture");
-    m_panels = {state, position, presets, downscale, capture};
+    m_helix = new HelixPanel(m_controller, m_tabs);
+    m_tabs->addTab(m_helix,  "HelixSR");
+    m_panels = {state, position, presets, downscale, capture, m_helix};
 
     // QTabWidget sizes itself to its tallest page, which leaves blank space under
     // shorter ones. Cap its height to tab bar + current page instead; the window
@@ -326,6 +339,13 @@ void MainWindow::startSelectedGame()
     if (path.isEmpty())
         return;
     m_controller->setTargetExecutable(path);
+    m_controller->launchTarget();
+}
+
+void MainWindow::runWithHelix(const QString &exePath)
+{
+    m_controller->setTargetExecutable(exePath);
+    refreshGames();   // show it in the game bar
     m_controller->launchTarget();
 }
 

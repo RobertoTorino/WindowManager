@@ -27,7 +27,7 @@ downscaled picture and screenshots.
 | Game bar | Saved games, Add game, Start, Restart, Kill. See [Games and launching](games-and-launching.md). |
 | Action row | Scan, Monitor 1 / 2, Stability, Focus, Destroy, Reset All, Shutdown. |
 | Window table | The windows of the selected game. |
-| Tabs | Window, Position & Size, Presets, Downscale, Capture. See [Window controls](window-controls.md). |
+| Tabs | Window, Position & Size, Presets, Downscale, Capture, HelixSR. See [Window controls](window-controls.md) and [HelixSR](helixsr.md). |
 | Status bar | The result of your last action (left) and the target program (right). |
 
 Every action is also written to the game's log. See [Logs and troubleshooting](logs-and-troubleshooting.md).
@@ -38,6 +38,7 @@ Every action is also written to the game's log. See [Logs and troubleshooting](l
 - [Window controls](window-controls.md)
 - [Fit to monitor](fit-to-monitor.md)
 - [Downscaled view](downscaled-view.md)
+- [HelixSR](helixsr.md)
 - [Logs and troubleshooting](logs-and-troubleshooting.md)
 - [Shortcuts](shortcuts.md)
 - [Reference](reference.md)

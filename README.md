@@ -9,12 +9,14 @@ window from drifting, and grab screenshots. Built with C++20 and Qt 6.
 - [Using WindowManager](#using-windowmanager)
 - [Fit to monitor (automatic)](#fit-to-monitor-automatic)
 - [Downscaled view (sharper picture)](#downscaled-view-sharper-picture)
+- [HelixSR (FSR 3.1 upscaler for AMD GPUs)](#helixsr-fsr-31-upscaler-for-amd-gpus)
 - [The window at a glance](#the-window-at-a-glance)
 - [Keyboard shortcuts](#keyboard-shortcuts)
 - [Files it creates](#files-it-creates)
 - [Safety notes](#safety-notes)
 - [Help pages](docs/help/getting-started.md) (also shown in the app under Help)
 - [Building and testing](BUILD.md)
+- [Changelog](CHANGELOG.md)
 - [Code layout](docs/ARCHITECTURE.md)
 
 ---
@@ -145,6 +147,30 @@ resolution" setting of an emulator or the GPU's DSR/VSR.
 
 ---
 
+## HelixSR (FSR 3.1 upscaler for AMD GPUs)
+
+[HelixSR](https://github.com/lonewolf0622/HelixSR) is an unofficial free upscaler that replaces a
+game's AMD FSR 3.1 DLL with one that runs NVIDIA's DLSS network as compute shaders, so it works
+on AMD GPUs. The **HelixSR** tab automates its setup:
+
+0. **Check this PC** (also run automatically before a set-up) tests the graphics card, shader model 6.6,
+   16-bit math, free disk space and the tools the setup needs. An AMD RDNA 1+ card is supported; other
+   cards are "experimental" (you are warned); a PC that cannot run it is stopped before the build.
+1. **Set up HelixSR** downloads the newest release (checked against its published SHA-256), lets
+   HelixSR's own setup build the network on this PC (about 5 to 6 minutes, with a progress bar and
+   timer), then deletes the downloads, the DLSS DLL and the build tools.
+2. The app checks for a newer release at start-up (when HelixSR is set up) and on **Check for
+   updates**; the tab shows *HelixSR (update)* when there is one.
+3. Select a game in the game bar and press **Check selected game**: games with an
+   `amd_fidelityfx_dx12.dll` / `amd_fidelityfx_upscaler_dx12.dll` join the HelixSR list.
+4. **Run with HelixSR** installs it into the game (the game's own DLL is kept as
+   `*.original.dll`) and starts the game; choose *AMD FSR* in the game. **Remove** restores it.
+
+Only the FSR 3.1 drop-in is supported (not HelixSR Scaler). The built DLL contains NVIDIA's network:
+keep it on your PC. Details: [HelixSR help page](docs/help/helixsr.md).
+
+---
+
 ## The window at a glance
 
 ```
@@ -157,7 +183,7 @@ resolution" setting of an emulator or the GPU's DSR/VSR.
 | | HWND | Title            | Class | Status | PID | X | Y | W | H          | |   Window table
 | |  ...                                                                   | |   (grows with the window)
 | +------------------------------------------------------------------------+ |
-| [ Window | Position & Size | Presets | Capture ]                           |   Tabs
+| [ Window | Position & Size | Presets | Downscale | Capture | HelixSR ]     |   Tabs
 | +------------------------------------------------------------------------+ |
 | |  controls for the selected tab                                         | |
 | +------------------------------------------------------------------------+ |
@@ -215,6 +241,9 @@ high-resolution group 4096x2160, 5120x2880, 6016x3384, 7680x4320.
 looks sharper without anything falling off the screen; see
 [Downscaled view](#downscaled-view-sharper-picture).
 
+**HelixSR** - set up and update HelixSR, and install it into / remove it from your FSR 3.1 games;
+see [HelixSR](#helixsr-fsr-31-upscaler-for-amd-gpus).
+
 **Capture** - screenshot the active window as PNG; choose how many shots for a burst
 (80 ms apart). **Open folder** shows the game's snapshot folder.
 
@@ -253,6 +282,7 @@ All next to `WindowManager.exe`:
 | `windowmanager.log`, `windowmanager_old.log` | Rolling application log (the old one is the previous file after rotation). |
 | `logs/<game>.log`, `logs/<game>_old.log` | Rolling log per game. View all logs in the app with **File > View logs...** (Ctrl+L). |
 | `snapshots/<game id>/` | Screenshots from the Capture tab. |
+| `helixsr/` | The built HelixSR (`HelixSR-<version>/`), the install helper script, and downloads while a set-up runs. HelixSR's Python lives in `%LOCALAPPDATA%\HelixSR`. |
 
 ---
 

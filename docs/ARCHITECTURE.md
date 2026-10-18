@@ -7,6 +7,7 @@ src/
   WindowManagerController.*     Qt-facing facade over the window logic; emits statusChanged()
   config/AppConfig.*            windowmanager.json (games, last target, per-game profiles)
   core/Logger.*                 Thread-safe rolling file logger (app log + one log per game)
+  core/BuildInfo.h              Window title / About text: version, build number, date (from build_stamp.h)
   core/Utilities.*              String / path / timestamp helpers
   window/WindowManager.*        Win32 logic: scan, move, resize, styles, launch, kill
   window/MonitorHelper.*        Monitor enumeration and geometry
@@ -15,6 +16,12 @@ src/
   window/FitCalculator.*        Pure logic: fit-to-monitor maths (Fit::compute) and the
                                 launch-settle trigger (Fit::Trigger)
   window/Supersample.*          Pure logic: letterbox, render size, parking position
+  helix/HelixRelease.*          Pure logic: versions, GitHub release parsing, checksums, update decision
+  helix/HelixGame.*             Pure logic: where a game's FSR 3.1 DLLs are, installed / replaced state
+  helix/HelixPaths.*            Pure logic: on-disk layout, built-package marker, post-build leftovers
+  helix/HelixSystem.*           Pure logic: GPU family from the name / SIMD width, can this PC run HelixSR (Verdict)
+  helix/SystemProbe.*           DXGI + Direct3D 12 probe of the adapters, free disk space, tar / PowerShell
+  helix/HelixSetup.*            Download, verify, unpack, build (HelixSR's own setup), clean up; per-game install
   ui/Theme.*                    Dark palette + stylesheet; button roles and "active" state
   ui/GameBar.*                  Game dropdown + Add / Start / Restart / Kill
   ui/WindowTable.*              Table of the target's windows (+ empty-state message)
@@ -26,8 +33,9 @@ src/
   ui/InfoDialogs.*              About dialog
   ui/HelpDialog.*               Help > Help topics: topic list + search over docs/help/*.md (embedded via the .qrc)
   ui/LogViewerDialog.*          File > View logs...: app and per-game log viewer
+  ui/HelixPanel.*               HelixSR tab: set-up / update with a timer, list of confirmed games, run
 tests/                          QtTest suites (see below)
-resources/                      Icon, arrow SVGs used by the stylesheet, Windows .rc
+resources/                      Icon, arrow SVGs used by the stylesheet, Windows .rc, helixsr_driver.py
 ```
 
 ## How the pieces talk
@@ -138,6 +146,38 @@ Spin boxes are styled in the same sheet; their arrows are the SVGs in `resources
   the picture edge so a drag can leave the picture. The game keeps keyboard focus throughout.
   Games that read the mouse via raw input, DirectInput or `GetCursorPos` cannot see posted messages.
 
+## HelixSR
+
+```
+ HelixPanel -- Set up / Update --> HelixSetup::installOrUpdate()
+   Checking     GET api.github.com/.../releases -> Helix::latestRelease()   (newest non-prerelease zip)
+   Downloading  zip -> SHA-256 against the asset digest (or SHA256SUMS.txt); mismatch = deleted
+   Extracting   tar.exe -xf  -> helixsr/HelixSR-<version>/
+   Building     powershell helixsr-setup.ps1 -Yes   (Python, dxc, DLSS DLL, network; ~5-6 min)
+   Cleaning     Helix::buildLeftovers() + older packages deleted, markBuilt()
+ HelixPanel -- Install / Run --> HelixSetup::installIntoGame()
+   python helixsr_driver.py <package> install|remove <game root>
+```
+
+- `HelixPanel` runs `probeSystem()` + `Helix::evaluate()` at start-up, on **Check this PC** and before every
+  set-up: `Unsupported` stops it, `Experimental` adds a warning to the confirmation. The rules live in
+  `HelixSystem.cpp` (`familyOf` reads the name, or the SIMD width for generic names like "AMD Radeon(TM) Graphics":
+  32 lanes = RDNA, 64 = GCN / Vega).
+- The decisions are in the pure `helix/` units (`tst_helix`); `HelixSetup` only runs the steps and
+  reports them (`stateChanged`, `buildFinished`, `gameJobFinished`). One job at a time.
+- A package counts as built only when `.windowmanager-built` exists in it, so a failed or cancelled
+  build is never used and is removed. The set-up prompt (the DLSS download) is answered with `-Yes`
+  after the user agrees in `HelixPanel`.
+- `resources/helixsr_driver.py` (embedded, written to `helixsr/` before each job) imports HelixSR's
+  `helixsr_install` module and installs the FSR drop-in for one folder, because the stock script
+  works on a numbered list of every game it finds. HelixSR's files are never edited.
+- After an install or removal the result is judged from the files (`Helix::scanGame`), not from the
+  exit code. `scanGame` looks for `amd_fidelityfx_upscaler_dx12.dll` / `amd_fidelityfx_dx12.dll`
+  (not `*.original.dll`) under the game root (`gameRootFor`: the exe folder, or the game folder when the
+  exe is in bin / x64 / Win64 / Binaries). "Installed" means the DLL contains `HelixSR x.y.z`;
+  "replaced" means HelixSR's record and backup exist but the DLL is the game's again.
+- Games on the HelixSR list have `helixConfirmed` set in `windowmanager.json`.
+
 ## Process termination
 
 `WindowManager::killTarget()` snapshots running processes and asks
@@ -156,7 +196,8 @@ unit-tested directly.
 | `tst_killplanner` | session scoping: unrelated loaders spared, descendants, orphans, pid reuse, ignore list |
 | `tst_fit` | fit maths (framed, borderless, negative-origin monitor, overscan, applied plan is stable) and the settle trigger (fires once, restarts on move/new window, ignores unusable windows, times out) |
 | `tst_supersample` | letterbox (side bars, top/bottom bars, never exceeds the area), render size per factor and shape, parking position (behind the overlay vs beyond the desktop, with a monitor above/next to it), mouse mapping (pixel centres, black bars ignored, clamping while dragging, never past the last pixel) |
-| `tst_appconfig` | save/load round-trip, clearing profiles, corrupt/missing files, legacy keys |
+| `tst_appconfig` | save/load round-trip, clearing profiles, corrupt/missing files, legacy keys, the HelixSR flag |
+| `tst_helix` | version parsing/ordering, release choice (no prereleases, the right zip), checksums, update decision, DLL version, game root, FSR DLL detection and installed / replaced state, built-package marker, post-build leftovers, GPU family and the can-this-PC-run-it verdict (a live probe of the test machine is printed too) |
 
 The UI and the Win32 window code are not unit-tested; they are checked by running the
 app. New logic that can be written without Win32 or widgets (like `KillPlanner`) should

@@ -16,6 +16,9 @@ Windows-only Qt 6 / C++20 app for managing a game's or emulator's windows: borde
 - Tests (QtTest): `ctest --test-dir build/windows-clang-debug --output-on-failure`
 - New source files must be added to `WINDOW_MANAGER_SOURCES` in [CMakeLists.txt](CMakeLists.txt).
 - The app version lives in `APP_VERSION` in CMakeLists.txt. CI bumps it, so don't edit it by hand.
+- The build number and date come from `cmake/BuildInfo.cmake`, which rewrites `build_stamp.h` in the build dir on every
+  build (CI run number, else the commit count). `BuildInfo` ([src/core/BuildInfo.h](src/core/BuildInfo.h)) shows them in the title and About box.
+- Keep [CHANGELOG.md](CHANGELOG.md) up to date under *Unreleased*.
 
 ### Compiler
 

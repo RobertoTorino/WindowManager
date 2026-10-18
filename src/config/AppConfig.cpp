@@ -78,6 +78,7 @@ bool AppConfig::load()
         game.launcherType    = obj["LauncherType"].toString("STANDARD");
         game.savedName       = obj["SavedName"].toString();
         game.snapshotDir     = obj["SnapshotDir"].toString();
+        game.helixConfirmed  = obj["HelixConfirmed"].toBool(false);
         m_games.insert(path, game);
     }
 
@@ -115,6 +116,7 @@ bool AppConfig::save()
         obj["LauncherType"]    = it.value().launcherType;
         obj["SavedName"]       = it.value().savedName;
         obj["SnapshotDir"]     = it.value().snapshotDir;
+        obj["HelixConfirmed"]  = it.value().helixConfirmed;
         games.append(obj);
     }
 

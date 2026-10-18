@@ -19,6 +19,7 @@ private slots:
         g.applicationPath = "C:/g/game.exe";
         g.savedName = "MY_GAME";
         g.id = "GAME_MY_GAME";
+        g.helixConfirmed = true;
         cfg.saveGame(g);
         cfg.setCurrentExePath(g.applicationPath);
         cfg.saveWindowProfile(g.applicationPath, 10, 20, 1280, 720);
@@ -33,6 +34,7 @@ private slots:
         QVERIFY(game.has_value());
         QCOMPARE(game->savedName, QString("MY_GAME"));
         QCOMPARE(game->id, QString("GAME_MY_GAME"));
+        QVERIFY(game->helixConfirmed);
 
         const auto prof = cfg.getWindowProfile(g.applicationPath);
         QVERIFY(prof.has_value());
@@ -41,6 +43,21 @@ private slots:
         QCOMPARE(prof->y, 20);
         QCOMPARE(prof->w, 1280);
         QCOMPARE(prof->h, 720);
+    }
+
+    void helixFlagDefaultsToOff()
+    {
+        QTemporaryDir dir;
+        const QString path = dir.filePath("old.json");
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("{\"games\":[{\"ApplicationPath\":\"C:/a.exe\",\"SavedName\":\"A\"}]}");
+        f.close();
+
+        auto& cfg = AppConfig::instance();
+        cfg.setConfigPathOverride(path);
+        QVERIFY(cfg.load());
+        QVERIFY(!cfg.gameByPath("C:/a.exe")->helixConfirmed);
     }
 
     void clearProfile()

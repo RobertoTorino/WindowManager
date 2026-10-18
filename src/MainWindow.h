@@ -5,6 +5,7 @@
 
 class ControlPanel;
 class GameBar;
+class HelixPanel;
 class QAction;
 class QCloseEvent;
 class ScaledView;
@@ -41,6 +42,7 @@ private:
 
     void addGame();
     void startSelectedGame();
+    void runWithHelix(const QString &exePath);
     void restartSelectedGame();
     void killSelectedGame();
     void shutdownTarget();
@@ -59,6 +61,7 @@ private:
     WindowTable *m_table{nullptr};
     QTabWidget  *m_tabs{nullptr};
     QList<ControlPanel *> m_panels;
+    HelixPanel  *m_helix{nullptr};
 
     QPushButton *m_monitor1Button{nullptr};
     QPushButton *m_monitor2Button{nullptr};

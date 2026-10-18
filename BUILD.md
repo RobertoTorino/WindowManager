@@ -42,6 +42,13 @@ CMake runs `windeployqt` as a post-build step, so the exe starts by double-click
 without Qt's `bin` folder on `PATH`. If you ever see *"Qt6Widgetsd.dll was not found"*,
 rebuild once so that step runs.
 
+### Build number and date
+
+Every build regenerates `build_stamp.h` in the build folder (`cmake/BuildInfo.cmake`). The window
+title and *Help > About* show the version, the build number and the date. The number is the GitHub
+Actions run number in CI and the commit count locally; a `+` after the commit in *About* means
+uncommitted changes.
+
 ---
 
 ## Incremental build (after code changes)

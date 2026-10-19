@@ -6,6 +6,7 @@
 |---|---|
 | Dropdown | Your saved games. Type to filter. Picking one makes it the target. |
 | **Add game...** | Register an `.exe`, `.bat` or `.cmd` and name it. Adding an existing path lets you rename it. |
+| **File > Find Steam games** | Look through the Steam libraries again (this also happens at every start). |
 | **Start** | Launch the selected game. If a game is already running, asks whether to close it first (a game is never started twice). |
 | **Restart** | Terminate it, then launch it again. |
 | **Kill** | Terminate it. |
@@ -13,8 +14,24 @@
 The selected game is the *target*: every button acts on the windows of that program. It is
 shown at the right of the status bar and remembered for the next start.
 
+## Steam games
+
+Every game installed through Steam is added to the dropdown by itself, at start-up and with
+**File > Find Steam games**. The app reads Steam's library files (`libraryfolders.vdf` and the
+`appmanifest_*.acf` files). Proton, the Steam Linux Runtime and the Steamworks redistributables are
+left out, and so are games that are still downloading.
+
+- The target is the game's largest executable that is not a crash reporter, installer or anti-cheat
+  helper. For Unreal Engine games that is the `...-Shipping.exe`, which owns the window. If the app picks
+  the wrong one, use **Add game...** on the right exe: the game keeps its Steam launch.
+- New games get Steam's name. Rename one with **Add game...** on the same exe; the name is kept.
+- A game you uninstall is taken off the list, but its saved position is kept. Games on a drive that
+  is not connected stay on the list.
+
 ## Starting a game
 
+- **Steam games** are started through Steam (`steam://rungameid/<AppID>`), so Proton, DRM and the
+  overlay work as usual.
 - **Executables** are started directly.
 - **Batch files** (`.bat`, `.cmd`) start a short-lived launcher. The app takes a snapshot of
   the running processes first, then looks for the new game process once a second for up to

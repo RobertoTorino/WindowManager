@@ -41,6 +41,9 @@ bool AppConfig::load()
     QFile f(configFilePath());
     if (!f.exists()) {
         Logger::instance().info("No config file found, starting fresh.", "AppConfig");
+        m_currentExePath.clear();
+        m_games.clear();
+        m_profiles.clear();
         return true;
     }
     if (!f.open(QIODevice::ReadOnly)) {
@@ -80,6 +83,7 @@ bool AppConfig::load()
         game.snapshotDir     = obj["SnapshotDir"].toString();
         game.helixConfirmed  = obj["HelixConfirmed"].toBool(false);
         game.childExePath    = obj["ChildExePath"].toString();
+        game.steamAppId      = static_cast<quint32>(obj["SteamAppId"].toInteger(0));
         m_games.insert(path, game);
     }
 
@@ -119,6 +123,8 @@ bool AppConfig::save()
         obj["SnapshotDir"]     = it.value().snapshotDir;
         obj["HelixConfirmed"]  = it.value().helixConfirmed;
         obj["ChildExePath"]    = it.value().childExePath;
+        if (it.value().steamAppId != 0)
+            obj["SteamAppId"]  = static_cast<qint64>(it.value().steamAppId);
         games.append(obj);
     }
 
@@ -199,6 +205,12 @@ void AppConfig::saveGame(const GameEntry& game)
 
     m_games.insert(game.applicationPath, game);
     save();
+}
+
+void AppConfig::removeGame(const QString& applicationPath)
+{
+    if (m_games.remove(applicationPath) > 0)
+        save();
 }
 
 // ---------------------------------------------------------------------------

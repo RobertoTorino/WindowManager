@@ -98,19 +98,16 @@ HelixPanel::HelixPanel(WindowManagerController* c, QWidget* parent)
     m_games = new QListWidget(this);
     m_games->setMinimumHeight(80);
     m_games->setMaximumHeight(130);
-    m_confirm = Theme::button("Check selected game", this, nullptr,
-                              "Look for an AMD FSR 3.1 DLL in the game selected in the game bar and add it to this list");
     m_install = Theme::button("Install", this, nullptr,
                               "Replace the game's FSR 3.1 DLL with HelixSR (the game's own file is kept)");
     m_remove = Theme::button("Remove", this, nullptr, "Put the game's own FSR DLL back");
-    m_forget = Theme::button("Forget", this, nullptr, "Take the game off this list (HelixSR stays in it if installed)");
     m_run = Theme::button("Run with HelixSR", this, "accent",
                           "Install HelixSR if needed, then start the game. In the game, select AMD FSR.");
     m_gameHint = new QLabel(this);
     m_gameHint->setObjectName("hint");
     m_gameHint->setWordWrap(true);
-    m_gameHint->setText("Select a game in the game bar, then press \"Check selected game\". Games with an AMD FSR 3.1 "
-                        "DLL are listed here. In the game, choose AMD FSR as the upscaler.");
+    m_gameHint->setText("HelixSR replaces a game's AMD FSR 3.1 DLL. Games without one are greyed out. "
+                        "In the game, choose AMD FSR as the upscaler.");
 
     // helixsr.ini of the selected game (only when HelixSR is installed in it)
     m_sharpener = new QComboBox(this);
@@ -140,9 +137,7 @@ HelixPanel::HelixPanel(WindowManagerController* c, QWidget* parent)
     iniRow->addStretch(1);
 
     auto* gameButtons = new QHBoxLayout;
-    gameButtons->addWidget(m_confirm);
     gameButtons->addStretch(1);
-    gameButtons->addWidget(m_forget);
     gameButtons->addWidget(m_remove);
     gameButtons->addWidget(m_install);
     gameButtons->addWidget(m_run);
@@ -155,7 +150,7 @@ HelixPanel::HelixPanel(WindowManagerController* c, QWidget* parent)
 
     auto* topBox = new QGroupBox("HelixSR (FSR 3.1 upscaler for AMD GPUs)", this);
     topBox->setLayout(top);
-    auto* gamesBox = new QGroupBox("Games with HelixSR", this);
+    auto* gamesBox = new QGroupBox("Games", this);
     gamesBox->setLayout(games);
 
     auto* grid = new QGridLayout(this);
@@ -178,8 +173,6 @@ HelixPanel::HelixPanel(WindowManagerController* c, QWidget* parent)
     });
     connect(m_checkPc, &QPushButton::clicked, this, &HelixPanel::showSystemCheck);
     connect(m_cancel, &QPushButton::clicked, m_setup, &HelixSetup::cancel);
-    connect(m_confirm, &QPushButton::clicked, this, &HelixPanel::confirmCurrentGame);
-    connect(m_forget, &QPushButton::clicked, this, &HelixPanel::forgetSelectedGame);
     connect(m_install, &QPushButton::clicked, this, &HelixPanel::installSelected);
     connect(m_remove, &QPushButton::clicked, this, &HelixPanel::removeSelected);
     connect(m_run, &QPushButton::clicked, this, &HelixPanel::runSelected);
@@ -272,6 +265,8 @@ void HelixPanel::updateSetupLabels()
                                 : QString("HelixSR is not set up on this PC yet.");
     if (latest)
         version += QString("    Latest: %1").arg(latest->version.toString());
+    if (const auto newer = m_setup->unsupportedNewer())
+        version += QString("    (HelixSR %1 is out; this app does not support it yet)").arg(newer->toString());
     m_version->setText(version);
 
     m_state->setText(busy || !m_setup->status().isEmpty()
@@ -327,8 +322,6 @@ void HelixPanel::updateButtons()
     const auto scan = scanOf(path);
     const bool ready = m_setup->canInstall();
 
-    m_confirm->setEnabled(!busy && !m_checking && !m_controller->targetExecutable().isEmpty());
-    m_forget->setEnabled(!busy && scan.has_value());
     m_install->setText(scan && scan->status == Status::Installed ? "Reinstall" : "Install");
     m_install->setEnabled(!busy && ready && scan && scan->status != Status::Unsupported);
     m_remove->setEnabled(!busy && ready && scan
@@ -374,7 +367,7 @@ QString HelixPanel::statusText(const Helix::GameScan& scan) const
     using Status = Helix::GameScan::Status;
     switch (scan.status) {
     case Status::Unsupported:
-        return "no AMD FSR 3.1 DLL found (game moved or updated?)";
+        return "no AMD FSR 3.1 DLL: HelixSR cannot be used";
     case Status::Ready:
         return "not installed";
     case Status::Replaced:
@@ -389,6 +382,12 @@ QString HelixPanel::statusText(const Helix::GameScan& scan) const
     return text;
 }
 
+void HelixPanel::gamesChanged()
+{
+    if (!m_setup->busy())   // a running job rebuilds the list when it ends
+        rebuildGames();
+}
+
 void HelixPanel::rebuildGames(std::function<void()> then)
 {
     const QString keep = selectedPath();
@@ -397,10 +396,11 @@ void HelixPanel::rebuildGames(std::function<void()> then)
     ++m_scanGeneration;
     m_afterScans = std::move(then);
 
+    // Every game; those that had an FSR 3.1 DLL last time first. The scans below have the final word.
     auto games = AppConfig::instance().games();
-    games.erase(std::remove_if(games.begin(), games.end(), [](const auto& g) { return !g.helixConfirmed; }),
-                games.end());
     std::sort(games.begin(), games.end(), [](const auto& a, const auto& b) {
+        if (a.helixConfirmed != b.helixConfirmed)
+            return a.helixConfirmed;
         return a.savedName.toUpper() < b.savedName.toUpper();
     });
 
@@ -419,10 +419,21 @@ void HelixPanel::rebuildGames(std::function<void()> then)
             if (generation != m_scanGeneration)
                 return;   // the list was rebuilt meanwhile
             m_scans.insert(path, scan);
+            const bool usable = scan.status != Helix::GameScan::Status::Unsupported;
             for (int i = 0; i < m_games->count(); ++i) {
                 auto* row = m_games->item(i);
-                if (row->data(kPathRole).toString() == path)
-                    row->setText(QString("%1  -  %2").arg(row->data(kNameRole).toString(), statusText(scan)));
+                if (row->data(kPathRole).toString() != path)
+                    continue;
+                row->setText(QString("%1  -  %2").arg(row->data(kNameRole).toString(), statusText(scan)));
+                if (!usable) {
+                    row->setFlags(row->flags() & ~(Qt::ItemIsEnabled | Qt::ItemIsSelectable));
+                    if (row == m_games->currentItem())
+                        m_games->setCurrentItem(nullptr);
+                }
+            }
+            if (auto entry = AppConfig::instance().gameByPath(path); entry && entry->helixConfirmed != usable) {
+                entry->helixConfirmed = usable;   // remembered for the order of the list next time
+                AppConfig::instance().saveGame(*entry);
             }
             if (path == selectedPath())
                 loadIni();
@@ -444,53 +455,6 @@ void HelixPanel::rebuildGames(std::function<void()> then)
     loadIni();
     updateButtons();
     updateSetupLabels();
-}
-
-void HelixPanel::confirmCurrentGame()
-{
-    const QString exe = m_controller->targetExecutable();
-    if (exe.isEmpty() || m_checking)
-        return;
-    const QString path = GameRegistry::normalizePath(exe);
-    m_checking = true;
-    updateButtons();
-    emit message("Looking for an AMD FSR 3.1 DLL in " + gameName(path) + "...");
-
-    Helix::scanGameAsync(this, path, [this, path](const Helix::GameScan& scan) {
-        m_checking = false;
-        updateButtons();
-        if (scan.targets.isEmpty()) {
-            emit message(gameName(path) + ": no AMD FSR 3.1 DLL found.");
-            QMessageBox::information(
-                this, "HelixSR - " + gameName(path),
-                "No AMD FSR 3.1 DLL (amd_fidelityfx_dx12.dll or amd_fidelityfx_upscaler_dx12.dll) was found in "
-                "this game's folder, so HelixSR cannot replace its upscaler.\n\nGames that only offer DLSS or XeSS "
-                "need HelixSR Scaler, which this app does not install.\n\nSearched: " + scan.root);
-            return;
-        }
-
-        auto entry = AppConfig::instance().gameByPath(path)
-                         .value_or(GameRegistry::buildEntry(path, GameRegistry::defaultFriendlyName(path)));
-        entry.helixConfirmed = true;
-        AppConfig::instance().saveGame(entry);
-        emit message(QString("%1 has an AMD FSR 3.1 DLL and is now on the HelixSR list.").arg(entry.savedName));
-        rebuildGames();
-        for (int i = 0; i < m_games->count(); ++i) {
-            if (m_games->item(i)->data(kPathRole).toString() == path)
-                m_games->setCurrentRow(i);
-        }
-    });
-}
-
-void HelixPanel::forgetSelectedGame()
-{
-    const QString path = selectedPath();
-    auto entry = AppConfig::instance().gameByPath(path);
-    if (!entry)
-        return;
-    entry->helixConfirmed = false;
-    AppConfig::instance().saveGame(*entry);
-    rebuildGames();
 }
 
 void HelixPanel::installSelected()

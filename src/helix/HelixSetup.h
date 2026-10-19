@@ -42,6 +42,8 @@ public:
     std::optional<Helix::Version> installedVersion() const;
     std::optional<Helix::Release> latest() const { return m_latest; }
     bool    updateAvailable() const;
+    // A newer HelixSR than latest() whose major version this app does not set up (see kSupportedMajor).
+    std::optional<Helix::Version> unsupportedNewer() const;
     QString lastError() const { return m_lastError; }
     bool    ready() const;   // built, and Python is there to install into games
     // The install helper script has passed its self-test against the built package. When it has not
@@ -99,6 +101,7 @@ private:
     QString m_lastError;
 
     std::optional<Helix::Release> m_latest;
+    std::optional<Helix::Version> m_newest;   // newest of any major version
     std::optional<Helix::Package> m_package;
     bool m_installAfterCheck{false};
     bool m_cancelled{false};

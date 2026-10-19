@@ -27,6 +27,8 @@ found yet (start the game, then press **Scan**).
 - **Window mode:** *Windowed* (with borders), *True Borderless FS* (no borders, covers the
   whole monitor), *Fit Screen* (fills the work area, taskbar stays visible) and
   *Fit to monitor...* (see [Fit to monitor](fit-to-monitor.md)).
+  On Linux, *True Borderless FS* puts the window in the desktop's own full-screen mode, because KDE
+  will not resize a Proton game's fixed-size window or remove its title bar. *Windowed* takes it out again.
 - **Extended styles:** Topmost, Tool Window, Layered, No Activate. These are toggles;
   green means on.
 

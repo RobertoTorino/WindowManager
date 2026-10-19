@@ -40,9 +40,15 @@ struct Release
     QString published;     // ISO 8601, for display only
 };
 
+// The HelixSR major version this app sets up. HelixSR 2 runs its game installer at the end of the
+// setup (with -Yes it installs HelixSR Scaler into every game it finds) and replaced the installer
+// functions resources/helixsr_driver.py calls, so 2.x is not offered until the app supports it.
+constexpr int kSupportedMajor = 1;
+
 // Newest non-draft, non-prerelease release of the GitHub "releases" listing that carries a
-// HelixSR-<version>.zip. nullopt for malformed JSON or when nothing qualifies.
-std::optional<Release> latestRelease(const QByteArray& releasesJson);
+// HelixSR-<version>.zip with major version `major` (0: any). nullopt for malformed JSON or when
+// nothing qualifies.
+std::optional<Release> latestRelease(const QByteArray& releasesJson, int major = kSupportedMajor);
 
 // Hash for `fileName` from the text of a SHA256SUMS file ("<hash>  <name>" per line).
 QString hashFromSums(const QString& sumsText, const QString& fileName);

@@ -31,6 +31,7 @@ private:
     WindowManagerController* m_controller;
     QTimer*  m_timer;
     int      m_remaining{0};
+    int      m_saved{0};
     quintptr m_hwnd{0};
     QString  m_saveDir;
     QString  m_baseName;

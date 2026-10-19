@@ -86,6 +86,13 @@ bool HelixSetup::updateAvailable() const
     return m_latest && m_package && Helix::isUpdate(installedVersion(), m_latest->version);
 }
 
+std::optional<Helix::Version> HelixSetup::unsupportedNewer() const
+{
+    if (m_newest && (!m_latest || *m_newest > m_latest->version))
+        return m_newest;
+    return std::nullopt;
+}
+
 bool HelixSetup::ready() const
 {
     return m_package && QFile::exists(Helix::pythonExe(Helix::setupDataDir()));
@@ -134,9 +141,16 @@ void HelixSetup::checkForUpdate()
         if (reply->error() != QNetworkReply::NoError) {
             error = reply->errorString();
         } else {
-            m_latest = Helix::latestRelease(reply->readAll());
+            const QByteArray json = reply->readAll();
+            m_latest = Helix::latestRelease(json);
+            const auto newest = Helix::latestRelease(json, 0);
+            m_newest = newest ? std::optional<Helix::Version>(newest->version) : std::nullopt;
+            if (const auto newer = unsupportedNewer())
+                logWarn(QString("HelixSR %1 is out, but this app sets up HelixSR %2.x only (2.x installs into "
+                                "every game during its setup)")
+                            .arg(newer->toString()).arg(Helix::kSupportedMajor));
             if (!m_latest)
-                error = "no HelixSR release with a setup zip was found";
+                error = QString("no HelixSR %1.x release with a setup zip was found").arg(Helix::kSupportedMajor);
         }
         m_lastError = error;
         if (!error.isEmpty()) {
@@ -356,7 +370,8 @@ void HelixSetup::buildNetwork()
 
     // -Yes answers the one question the setup asks (the download of NVIDIA's DLSS DLL); the
     // user agreed to it in this app. The setup's game question at the end gets no input and
-    // is skipped; games are installed from here instead.
+    // is skipped; games are installed from here instead. This holds for HelixSR 1.x only: in 2.x
+    // -Yes also answers the game questions, which is why latestRelease() keeps to kSupportedMajor.
     m_process->start("powershell.exe", {"-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                                         m_buildDir + "/helixsr-setup.ps1", "-Yes"});
     m_process->closeWriteChannel();

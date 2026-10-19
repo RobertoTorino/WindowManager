@@ -5,16 +5,19 @@
 #include <QFileInfo>
 #include <QStorageInfo>
 
+#ifdef Q_OS_WIN
 #include <d3d12.h>
 #include <dxgi1_4.h>
 #include <wrl/client.h>
 
 using Microsoft::WRL::ComPtr;
+#endif
 
 namespace Helix {
 
 namespace {
 
+#ifdef Q_OS_WIN
 GpuInfo probeAdapter(IDXGIAdapter1* adapter, const DXGI_ADAPTER_DESC1& desc)
 {
     GpuInfo gpu;
@@ -51,6 +54,7 @@ GpuInfo probeAdapter(IDXGIAdapter1* adapter, const DXGI_ADAPTER_DESC1& desc)
     }
     return gpu;
 }
+#endif
 
 qint64 freeSpaceMB(const QString& dir)
 {
@@ -71,7 +75,9 @@ qint64 freeSpaceMB(const QString& dir)
 SystemInfo probeSystem(const QString& storageDir)
 {
     SystemInfo info;
+    info.freeDiskMB = freeSpaceMB(storageDir);
 
+#ifdef Q_OS_WIN
     ComPtr<IDXGIFactory1> factory;
     if (SUCCEEDED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) {
         ComPtr<IDXGIAdapter1> adapter;
@@ -83,10 +89,11 @@ SystemInfo probeSystem(const QString& storageDir)
         }
     }
 
-    info.freeDiskMB = freeSpaceMB(storageDir);
     const QString system32 = qEnvironmentVariable("SystemRoot") + "/System32";
     info.hasTar = QFile::exists(system32 + "/tar.exe");
     info.hasPowerShell = QFile::exists(system32 + "/WindowsPowerShell/v1.0/powershell.exe");
+#endif
+    // Elsewhere there is no Direct3D 12 to ask: no adapters, so HelixSR is reported as unsupported.
     return info;
 }
 

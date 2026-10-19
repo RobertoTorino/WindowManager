@@ -2,6 +2,8 @@
 
 #include "core/Utilities.h"
 
+#include <algorithm>
+
 #include <QCoreApplication>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -9,6 +11,7 @@
 #include <QFileInfo>
 #include <QLabel>
 #include <QLineEdit>
+#include <QSet>
 #include <QSignalBlocker>
 #include <QVBoxLayout>
 
@@ -114,6 +117,56 @@ AppConfig::GameEntry buildEntry(const QString& selectedPath, const QString& frie
     if (game.snapshotDir.isEmpty())
         game.snapshotDir = QString("snapshots/") + game.id;
     return game;
+}
+
+SteamSync syncSteamGames(const SteamLibrary::Scan& scan)
+{
+    SteamSync result;
+    auto& config = AppConfig::instance();
+
+    QSet<quint32> installed;
+    for (const auto& g : scan.games) {
+        installed.insert(g.appId);
+        const QString exe = normalizePath(g.exePath);
+
+        std::optional<AppConfig::GameEntry> known;
+        for (const auto& entry : config.games()) {
+            if (entry.steamAppId == g.appId)
+                known = entry;
+        }
+        if (known && QFileInfo::exists(known->applicationPath))
+            continue;   // the user's executable, still there
+
+        AppConfig::GameEntry entry = config.gameByPath(exe).value_or(
+            buildEntry(exe, known ? known->savedName : sanitizeFriendlyName(g.name)));
+        if (known) {
+            // the executable moved (game update): keep the name, id and folders under the new path
+            const QString path = entry.applicationPath;
+            entry = *known;
+            entry.applicationPath = path;
+            entry.gameApplication = QFileInfo(path).fileName();
+            config.removeGame(known->applicationPath);
+        } else if (!config.gameByPath(exe)) {
+            ++result.added;
+        }
+        entry.steamAppId = g.appId;
+        entry.launcherType = "STEAM";
+        config.saveGame(entry);
+    }
+
+    // Uninstalled: the AppID is gone from a library that is there, and so is the executable.
+    for (const auto& entry : config.games()) {
+        if (entry.steamAppId == 0 || installed.contains(entry.steamAppId) || QFileInfo::exists(entry.applicationPath))
+            continue;
+        const bool inLibrary = std::any_of(scan.libraries.begin(), scan.libraries.end(), [&](const QString& lib) {
+            return entry.applicationPath.startsWith(lib + '/', Qt::CaseInsensitive);
+        });
+        if (inLibrary) {
+            config.removeGame(entry.applicationPath);
+            ++result.removed;
+        }
+    }
+    return result;
 }
 
 QString snapshotDirFor(const QString& exePath)

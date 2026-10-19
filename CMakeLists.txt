@@ -39,15 +39,28 @@ set(WINDOW_MANAGER_SOURCES
     # Slice 4 – WindowManager core
     src/window/WindowManager.h
     src/window/WindowManager.cpp
-    # Slice 5 – WindowStabilizer
+    # Slice 5 – WindowStabilizer (implemented per platform below)
     src/window/WindowStabilizer.h
-    src/window/WindowStabilizer.cpp
+    # Operating-system access behind one interface; one backend per platform
+    src/platform/PlatformBackend.h
+    src/platform/PlatformBackend.cpp
+    $<$<PLATFORM_ID:Windows>:src/platform/win32/Win32Backend.cpp>
+    $<$<PLATFORM_ID:Windows>:src/platform/win32/Win32WindowStabilizer.cpp>
+    $<$<PLATFORM_ID:Linux>:src/platform/x11/X11Backend.cpp>
+    $<$<PLATFORM_ID:Linux>:src/platform/PollingWindowStabilizer.cpp>
+    $<$<PLATFORM_ID:Linux>:src/platform/unsupported/ScaledViewUnsupported.cpp>
     # Kill-scope decision logic (pure, unit-tested)
     src/window/KillPlanner.h
     src/window/KillPlanner.cpp
     # Fit-to-monitor maths and launch-settle trigger (pure, unit-tested)
     src/window/FitCalculator.h
     src/window/FitCalculator.cpp
+    # Steam game identification by AppID (pure, unit-tested)
+    src/window/SteamMatch.h
+    src/window/SteamMatch.cpp
+    # Games installed through Steam: library and manifest files, main executable (pure parts unit-tested)
+    src/window/SteamLibrary.h
+    src/window/SteamLibrary.cpp
     # Downscaled-view geometry (pure, unit-tested)
     src/window/Supersample.h
     src/window/Supersample.cpp
@@ -67,7 +80,7 @@ set(WINDOW_MANAGER_SOURCES
     src/ui/FitDialog.h
     src/ui/FitDialog.cpp
     src/ui/ScaledView.h
-    src/ui/ScaledView.cpp
+    $<$<NOT:$<PLATFORM_ID:Linux>>:src/ui/ScaledView.cpp>
     src/ui/InfoDialogs.h
     src/ui/InfoDialogs.cpp
     src/ui/HelpDialog.h
@@ -135,6 +148,12 @@ target_compile_definitions(WindowManager
         $<$<CONFIG:Debug>:QT_QML_DEBUG>
 )
 
+if(UNIX AND NOT APPLE)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(XCB REQUIRED IMPORTED_TARGET xcb)
+    target_link_libraries(WindowManager PRIVATE PkgConfig::XCB)
+endif()
+
 if(WIN32)
     target_compile_definitions(WindowManager PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
     target_link_libraries(WindowManager PRIVATE user32 gdi32 dwmapi d3d12 dxgi)
@@ -178,8 +197,26 @@ if(WINDOWMANAGER_BUILD_TESTS)
     add_wm_test(tst_killplanner src/window/KillPlanner.cpp)
     add_wm_test(tst_fit         src/window/FitCalculator.cpp)
     add_wm_test(tst_supersample src/window/Supersample.cpp)
+    add_wm_test(tst_steammatch  src/window/SteamMatch.cpp)
     add_wm_test(tst_appconfig   src/config/AppConfig.cpp src/core/Logger.cpp)
-    add_wm_test(tst_helix       src/helix/HelixRelease.cpp src/helix/HelixGame.cpp
+    # WindowManager and MonitorHelper against a fake PlatformBackend (no real windows)
+    add_wm_test(tst_windowmanager
+                src/window/WindowManager.cpp src/window/MonitorHelper.cpp
+                src/window/KillPlanner.cpp src/window/FitCalculator.cpp src/window/SteamMatch.cpp
+                src/platform/PlatformBackend.cpp
+                src/config/AppConfig.cpp src/core/Logger.cpp)
+    target_link_libraries(tst_windowmanager PRIVATE Qt${QT_VERSION_MAJOR}::Gui)
+    # Steam library parsing, a fake Steam folder, and the sync into the saved games
+    add_wm_test(tst_steamlibrary
+                src/window/SteamLibrary.cpp src/ui/GameRegistry.cpp
+                src/config/AppConfig.cpp src/core/Utilities.cpp src/core/Logger.cpp)
+    target_link_libraries(tst_steamlibrary PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+    if(UNIX AND NOT APPLE)
+        # The real X11 backend against an xterm (skips itself without a display)
+        add_wm_test(tst_x11backend src/platform/x11/X11Backend.cpp src/platform/PlatformBackend.cpp)
+        target_link_libraries(tst_x11backend PRIVATE Qt${QT_VERSION_MAJOR}::Gui PkgConfig::XCB)
+    endif()
+    add_wm_test(tst_helix      src/helix/HelixRelease.cpp src/helix/HelixGame.cpp
                                 src/helix/HelixPaths.cpp src/helix/HelixSystem.cpp
                                 src/helix/HelixIni.cpp src/helix/SystemProbe.cpp)
     if(WIN32)

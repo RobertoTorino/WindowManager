@@ -1,0 +1,49 @@
+name: Linux build (work in progress)
+
+# Keeps the Linux port compiling and its tests green. It builds nothing for release.
+on:
+  push:
+    branches:
+      - linux-port
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install build tools and X libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config libxcb1-dev libgl1-mesa-dev \
+            libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-render-util0 libxcb-shape0 libxcb-xkb1 xvfb xterm
+
+      - name: Set up Qt
+        uses: jurplel/install-qt-action@v3
+        with:
+          version: "6.10.2"
+
+      - name: Configure
+        run: cmake -S . -B build/linux -G Ninja -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        run: cmake --build build/linux
+
+      - name: Tests
+        run: ctest --test-dir build/linux --output-on-failure -E tst_x11backend
+        env:
+          QT_QPA_PLATFORM: offscreen
+
+      # No window manager runs under Xvfb, so this only checks the fallback paths. It is not
+      # known to be reliable there yet, hence it cannot fail the build.
+      - name: X11 backend test (against xterm under Xvfb)
+        continue-on-error: true
+        run: xvfb-run -a ctest --test-dir build/linux --output-on-failure -R tst_x11backend

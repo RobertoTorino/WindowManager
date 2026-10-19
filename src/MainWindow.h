@@ -41,6 +41,7 @@ private:
     void refreshGames();
 
     void addGame();
+    void findSteamGames(bool quiet);
     void startSelectedGame();
     void runWithHelix(const QString &exePath);
     void launchGame(const QString &exePath);

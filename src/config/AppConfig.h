@@ -28,8 +28,9 @@ public:
         QString launcherType{"STANDARD"};
         QString savedName;
         QString snapshotDir;
-        bool    helixConfirmed{false};   // checked for an FSR 3.1 DLL: listed on the HelixSR tab
+        bool    helixConfirmed{false};   // an FSR 3.1 DLL was found the last time: HelixSR can be used
         QString childExePath;            // .bat/.cmd games: the game exe the script started last time
+        quint32 steamAppId{0};           // found in a Steam library: started through Steam; 0 = not
     };
 
     struct WindowProfile
@@ -59,6 +60,7 @@ public:
     std::optional<GameEntry> gameByPath(const QString& applicationPath) const;
     std::optional<GameEntry> currentGame() const;
     void saveGame(const GameEntry& game);
+    void removeGame(const QString& applicationPath);   // keeps the window profile
 
     // Per-exe window profiles
     std::optional<WindowProfile> getWindowProfile(const QString& exePath) const;

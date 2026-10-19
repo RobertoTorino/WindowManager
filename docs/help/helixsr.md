@@ -16,7 +16,12 @@ while setting up), `tar.exe` and PowerShell. The check also runs before every se
 |---|---|
 | supported | An AMD RDNA 1 or newer card (RX 5000, 6000, 7000, 9000 series, recent Ryzen graphics) with everything above. |
 | experimental | Works on paper but HelixSR was not tested on it: AMD Vega and older, NVIDIA (GTX 10 "should work"; GTX cards have no DLSS, so HelixSR is useful there; on RTX the game's own DLSS is better) or Intel. You are warned and may continue. |
-| not supported | No Direct3D 12 device, shader model below 6.6 (update the graphics driver), too little disk space, or a missing tool. Set-up is stopped. |
+| not supported | No Direct3D 12 device, shader model below 6.6, too little disk space, or a missing tool. Set-up is stopped. |
+
+**Shader model below 6.6.** HelixSR's shaders are built for shader model 6.6, so a card that reports less cannot
+run them. The graphics driver decides what the card reports: install the newest driver for the card and check
+again. If the newest driver still reports 6.5 or lower (this can happen with data-centre and older cards),
+HelixSR cannot run on that card. The app cannot work around this.
 
 ## Set up HelixSR (once)
 
@@ -40,27 +45,31 @@ If HelixSR is set up, the app checks GitHub for a newer release when it starts (
 *HelixSR (update)* and the button reads *Update to x.y.z*. The update downloads and builds the new
 version, removes the old one, and offers to update the games that still have the older DLL.
 
-## Games with HelixSR
+The app sets up HelixSR 1.x only. HelixSR 2.0 changed its setup: run unattended, it installs HelixSR
+Scaler into every game it finds. Until the app supports that, the tab shows *HelixSR 2.0.0 is out; this
+app does not support it yet* and keeps offering the newest 1.x version.
+
+## Games
 
 HelixSR works in games that ship AMD FSR 3.1 (a file named `amd_fidelityfx_dx12.dll` or
 `amd_fidelityfx_upscaler_dx12.dll`).
 
-1. Add the game with **Add game...** as usual and select it in the game bar.
-2. On the HelixSR tab press **Check selected game**. If it has an FSR 3.1 DLL it joins the list;
-   if not, you are told why.
-3. Pick it in the list and press **Install**, or just **Run with HelixSR** (double-click does the
+1. The list shows every saved game (Steam games are added by themselves). The app looks through each
+   game's folder in the background. Games with an FSR 3.1 DLL come first. Games without one are greyed
+   out and cannot be selected.
+2. Pick a game in the list and press **Install**, or just **Run with HelixSR** (double-click does the
    same): it installs when needed and then starts the game like **Start** does.
-4. In the game's graphics settings choose **AMD FSR** as the upscaler.
+3. In the game's graphics settings choose **AMD FSR** as the upscaler.
 
 | Status in the list | Meaning |
 |---|---|
 | not installed | The game has an FSR 3.1 DLL; HelixSR is not in it yet. |
 | HelixSR x.y.z installed | The game's FSR DLL is HelixSR's. "is available" means a newer build can be installed. |
 | the game put its own DLL back | A game update or "verify files" restored the original. Install again (Run does it for you). |
-| no AMD FSR 3.1 DLL found | The game moved or no longer has the DLL. |
+| no AMD FSR 3.1 DLL: HelixSR cannot be used | Greyed out. The game has no FSR 3.1 (it may only offer DLSS, XeSS or an older FSR). |
 
-**Remove** puts the game's own DLL back (HelixSR keeps it as `*.original.dll` next to it). **Forget**
-only takes the game off the list. Close the game before installing or removing.
+**Remove** puts the game's own DLL back (HelixSR keeps it as `*.original.dll` next to it). Close the game
+before installing or removing.
 
 ## Settings for a game
 

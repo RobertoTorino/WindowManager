@@ -22,7 +22,8 @@ class QTimer;
 
 /**
  * HelixSR tab: set up / update HelixSR (with a running timer, the build takes minutes) and the
- * list of games confirmed to have an FSR 3.1 DLL, from which they are installed, removed and run.
+ * list of games, from which it is installed, removed and run. A game without an FSR 3.1 DLL is
+ * greyed out: HelixSR cannot be used in it.
  */
 class HelixPanel : public ControlPanel
 {
@@ -35,6 +36,7 @@ public:
 
 public slots:
     void refresh() override;
+    void gamesChanged();   // the saved games changed: rebuild the list
 
 signals:
     void runRequested(const QString& exePath);   // HelixSR is in the game: start it
@@ -52,8 +54,6 @@ private:
     void showSystemCheck();
 
     void setUpOrUpdate();
-    void confirmCurrentGame();
-    void forgetSelectedGame();
     void installSelected();
     void removeSelected();
     void runSelected();
@@ -80,11 +80,9 @@ private:
     QPushButton*  m_cancel;
 
     QListWidget*  m_games;
-    QPushButton*  m_confirm;
     QPushButton*  m_install;
     QPushButton*  m_remove;
     QPushButton*  m_run;
-    QPushButton*  m_forget;
     QLabel*       m_gameHint;
 
     QComboBox*      m_sharpener;     // helixsr.ini of the selected game

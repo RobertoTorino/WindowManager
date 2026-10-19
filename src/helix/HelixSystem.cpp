@@ -48,7 +48,10 @@ GpuJudgement judge(const GpuInfo& gpu)
         return {Level::Unsupported, QString("%1: no Direct3D 12 device (%2)")
                                         .arg(gpu.name, gpu.error.isEmpty() ? QString("driver too old?") : gpu.error)};
     if (gpu.shaderModel < 66)
-        return {Level::Unsupported, QString("%1: shader model %2.%3 only, HelixSR needs 6.6 (update the graphics driver)")
+        // HelixSR's setup compiles every shader as cs_6_6. A newer driver may add 6.6; a card whose newest
+        // driver stops at 6.5 (data-centre and older cards) cannot run HelixSR at all.
+        return {Level::Unsupported, QString("%1: shader model %2.%3 only, HelixSR needs 6.6. Install the newest driver "
+                                            "for this card; if it still reports %2.%3, this card cannot run HelixSR")
                                         .arg(card).arg(gpu.shaderModel / 10).arg(gpu.shaderModel % 10)};
 
     switch (family) {

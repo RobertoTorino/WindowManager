@@ -123,6 +123,18 @@ private slots:
 "            'assets':[{'name':'HelixSR-1.0.0.zip','browser_download_url':'u'}]}]")).has_value());
     }
 
+    void latestStaysOnTheSupportedMajor()
+    {
+        // HelixSR 2 installs into every game during its setup: the app keeps to 1.x but still sees 2.x.
+        const QByteArray two = json("[{'tag_name':'v2.0.0','prerelease':false,\n"
+"            'assets':[{'name':'HelixSR-2.0.0.zip','browser_download_url':'https://example.test/2.0.0.zip'}]},\n"
+"           {'tag_name':'v1.9.3','prerelease':false,\n"
+"            'assets':[{'name':'HelixSR-1.9.3.zip','browser_download_url':'https://example.test/1.9.3.zip'}]}]");
+        QCOMPARE(latestRelease(two)->version.toString(), QString("1.9.3"));
+        QCOMPARE(latestRelease(two, 0)->version.toString(), QString("2.0.0"));
+        QVERIFY(!latestRelease(two, 3).has_value());
+    }
+
     void sumsLookup()
     {
         const QString h1(64, 'a');

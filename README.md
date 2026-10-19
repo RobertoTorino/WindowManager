@@ -158,11 +158,12 @@ on AMD GPUs. The **HelixSR** tab automates its setup:
 0. **Check this PC** (also run automatically before a set-up) tests the graphics card, shader model 6.6,
    16-bit math, free disk space and the tools the setup needs. An AMD RDNA 1+ card is supported; other
    cards are "experimental" (you are warned); a PC that cannot run it is stopped before the build.
-1. **Set up HelixSR** downloads the newest release (checked against its published SHA-256), lets
+1. **Set up HelixSR** downloads the newest HelixSR 1.x release (checked against its published SHA-256), lets
    HelixSR's own setup build the network on this PC (about 5 to 6 minutes, with a progress bar and
    timer), then deletes the downloads, the DLSS DLL and the build tools.
 2. The app checks for a newer release at start-up (when HelixSR is set up) and on **Check for
-   updates**; the tab shows *HelixSR (update)* when there is one.
+   updates**; the tab shows *HelixSR (update)* when there is one. HelixSR 2.x is not offered yet: its
+   setup installs into every game it finds by itself.
 3. The tab lists every saved game. Games with an `amd_fidelityfx_dx12.dll` /
    `amd_fidelityfx_upscaler_dx12.dll` can be selected; the others are greyed out.
 4. **Run with HelixSR** installs it into the game (the game's own DLL is kept as

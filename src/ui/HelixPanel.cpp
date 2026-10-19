@@ -265,6 +265,8 @@ void HelixPanel::updateSetupLabels()
                                 : QString("HelixSR is not set up on this PC yet.");
     if (latest)
         version += QString("    Latest: %1").arg(latest->version.toString());
+    if (const auto newer = m_setup->unsupportedNewer())
+        version += QString("    (HelixSR %1 is out; this app does not support it yet)").arg(newer->toString());
     m_version->setText(version);
 
     m_state->setText(busy || !m_setup->status().isEmpty()

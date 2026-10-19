@@ -164,7 +164,7 @@ Spin boxes are styled in the same sheet; their arrows are the SVGs in `resources
 
 ```
  HelixPanel -- Set up / Update --> HelixSetup::installOrUpdate()
-   Checking     GET api.github.com/.../releases -> Helix::latestRelease()   (newest non-prerelease zip)
+   Checking     GET api.github.com/.../releases -> Helix::latestRelease()   (newest non-prerelease 1.x zip, kSupportedMajor)
    Downloading  zip -> SHA-256 against the asset digest (or SHA256SUMS.txt); mismatch = deleted
    Extracting   tar.exe -xf  -> helixsr/HelixSR-<version>/
    Building     powershell helixsr-setup.ps1 -Yes   (Python, dxc, DLSS DLL, network; ~5-6 min)

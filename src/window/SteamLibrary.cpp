@@ -109,6 +109,32 @@ bool isHelperExe(const QString& relativePath)
     return false;
 }
 
+// The path with each part spelled as on disk. Steam writes its library paths in lower case on Windows
+// ("c:\program files (x86)\steam") and canonicalFilePath() keeps the case it is given, but saved games
+// are keyed by their exact path: a lower-case copy of a game added by hand would be a second entry.
+// Parts that do not exist are kept as they are. Elsewhere file names are case-sensitive: unchanged.
+QString onDiskCase(const QString& path)
+{
+#ifdef Q_OS_WIN
+    const QString clean = QDir::fromNativeSeparators(path);
+    if (clean.size() < 2 || clean[1] != ':')
+        return clean;   // UNC or relative: left alone
+    const QStringList parts = clean.split('/', Qt::SkipEmptyParts);
+    QString out = parts.first().toUpper();   // the drive
+    for (qsizetype i = 1; i < parts.size(); ++i) {
+        const QStringList names = QDir(out + '/').entryList(QDir::AllEntries | QDir::Hidden | QDir::System
+                                                            | QDir::NoDotAndDotDot);
+        const auto hit = std::find_if(names.begin(), names.end(), [&](const QString& n) {
+            return n.compare(parts[i], Qt::CaseInsensitive) == 0;
+        });
+        out += '/' + (hit != names.end() ? *hit : parts[i]);
+    }
+    return out;
+#else
+    return path;
+#endif
+}
+
 // Executables in the install folder: .exe (Windows games, also under Proton), and on Linux the files
 // a native game starts (*.x86_64, *.x86 and extension-less programs).
 QList<ExeCandidate> exeCandidates(const QString& installPath)
@@ -214,7 +240,7 @@ QStringList defaultSteamRoots()
 #endif
     QStringList out;
     for (const QString& c : candidates) {
-        const QString real = QFileInfo(c).canonicalFilePath();   // ~/.steam/steam is usually a link
+        const QString real = onDiskCase(QFileInfo(c).canonicalFilePath());   // ~/.steam/steam is usually a link
         if (!real.isEmpty() && !out.contains(real))
             out << real;
     }
@@ -229,7 +255,7 @@ Scan findGames(const QStringList& steamRoots)
         listed.prepend(root);   // the Steam folder is always a library, even when the file is missing
         for (const QString& lib : listed) {
             // the same folder can have two names (/home and /var/home, a bind mount): keep the first
-            const QString real = QFileInfo(lib).canonicalFilePath();
+            const QString real = onDiskCase(QFileInfo(lib).canonicalFilePath());
             std::error_code error;
             const bool known = std::any_of(libraries.begin(), libraries.end(), [&](const QString& l) {
                 return std::filesystem::equivalent(l.toStdWString(), real.toStdWString(), error);
@@ -253,7 +279,7 @@ Scan findGames(const QStringList& steamRoots)
             g.appId = m->appId;
             g.name = m->name;
             g.library = lib;
-            g.installPath = lib + "/steamapps/common/" + m->installDir;
+            g.installPath = onDiskCase(lib + "/steamapps/common/" + m->installDir);
             const auto exes = exeCandidates(g.installPath);
             const int main = pickMainExe(exes);
             if (main < 0)

@@ -16,7 +16,12 @@ while setting up), `tar.exe` and PowerShell. The check also runs before every se
 |---|---|
 | supported | An AMD RDNA 1 or newer card (RX 5000, 6000, 7000, 9000 series, recent Ryzen graphics) with everything above. |
 | experimental | Works on paper but HelixSR was not tested on it: AMD Vega and older, NVIDIA (GTX 10 "should work"; GTX cards have no DLSS, so HelixSR is useful there; on RTX the game's own DLSS is better) or Intel. You are warned and may continue. |
-| not supported | No Direct3D 12 device, shader model below 6.6 (update the graphics driver), too little disk space, or a missing tool. Set-up is stopped. |
+| not supported | No Direct3D 12 device, shader model below 6.6, too little disk space, or a missing tool. Set-up is stopped. |
+
+**Shader model below 6.6.** HelixSR's shaders are built for shader model 6.6, so a card that reports less cannot
+run them. The graphics driver decides what the card reports: install the newest driver for the card and check
+again. If the newest driver still reports 6.5 or lower (this can happen with data-centre and older cards),
+HelixSR cannot run on that card. The app cannot work around this.
 
 ## Set up HelixSR (once)
 
@@ -39,6 +44,10 @@ If HelixSR is set up, the app checks GitHub for a newer release when it starts (
 **Check for updates** does it on demand. When a newer one exists the tab is named
 *HelixSR (update)* and the button reads *Update to x.y.z*. The update downloads and builds the new
 version, removes the old one, and offers to update the games that still have the older DLL.
+
+The app sets up HelixSR 1.x only. HelixSR 2.0 changed its setup: run unattended, it installs HelixSR
+Scaler into every game it finds. Until the app supports that, the tab shows *HelixSR 2.0.0 is out; this
+app does not support it yet* and keeps offering the newest 1.x version.
 
 ## Games
 

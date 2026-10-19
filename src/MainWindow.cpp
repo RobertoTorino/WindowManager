@@ -35,6 +35,7 @@
 #include <QProcess>
 #include <QPushButton>
 #include <QSettings>
+#include <QScreen>
 #include <QShortcut>
 #include <QSizePolicy>
 #include <QStatusBar>
@@ -188,18 +189,37 @@ void MainWindow::buildUi()
         if (!page)
             return;
         constexpr int kPaneFrame = 8;
-        m_tabs->setMaximumHeight(m_tabs->tabBar()->sizeHint().height()
-                                 + page->sizeHint().height() + kPaneFrame);
+        // Word-wrapped labels (HelixSR's "This PC" line) need more lines than the size hint assumes
+        // when the text is large: use the height the page wants at its real width.
+        const int pageHeight = page->hasHeightForWidth() ? page->heightForWidth(page->width())
+                                                         : page->sizeHint().height();
+        const int tabsHeight = m_tabs->tabBar()->sizeHint().height() + pageHeight + kPaneFrame;
+        m_tabs->setMaximumHeight(tabsHeight);
 
         // A page can grow while hidden (HelixSR fills in its texts and game list later), and with
         // large fonts it may then need more room than the window has. Grow the window rather than
-        // squeeze the page, which makes its widgets overlap.
+        // squeeze the page, which makes its widgets overlap. The window's minimum alone is not
+        // enough: it ignores the extra lines of wrapped labels, so give the tabs their full height,
+        // as far as the screen allows (the title bar and the status bar must stay on it).
         layout->invalidate();
-        QTimer::singleShot(0, this, [this]() {   // once the layout has been recalculated
-            const int needed = std::max(620, minimumSizeHint().height());
+        QTimer::singleShot(0, this, [this, tabsHeight]() {   // once the layout has been recalculated
+            const int extra = std::max(0, tabsHeight - m_tabs->minimumSizeHint().height());
+            int needed = std::max(620, minimumSizeHint().height() + extra);
+            if (const QScreen *s = screen()) {
+                const int frame = frameGeometry().height() - height();
+                needed = std::max(minimumSizeHint().height(),
+                                  std::min(needed, s->availableGeometry().height() - frame));
+            }
             setMinimumHeight(needed);
             if (height() < needed)
                 resize(width(), needed);
+            // a grown window may now run off the bottom of the screen: move it up
+            if (const QScreen *s = screen()) {
+                const QRect avail = s->availableGeometry();
+                const int overflow = frameGeometry().bottom() - avail.bottom();
+                if (overflow > 0)
+                    move(x(), std::max(avail.top(), y() - overflow));
+            }
         });
     };
     connect(m_tabs, &QTabWidget::currentChanged, this, fitCurrentPage);

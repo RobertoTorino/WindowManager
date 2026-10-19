@@ -31,7 +31,7 @@ std::optional<Version> versionInDll(const QByteArray& bytes)
     return parseVersion(m.captured(1));
 }
 
-std::optional<Release> latestRelease(const QByteArray& releasesJson)
+std::optional<Release> latestRelease(const QByteArray& releasesJson, int major)
 {
     const auto doc = QJsonDocument::fromJson(releasesJson);
     if (!doc.isArray())
@@ -65,7 +65,7 @@ std::optional<Release> latestRelease(const QByteArray& releasesJson)
             if (digest.startsWith("sha256:", Qt::CaseInsensitive))
                 r.sha256 = digest.mid(7).toLower();
         }
-        if (r.zipUrl.isEmpty())
+        if (r.zipUrl.isEmpty() || (major != 0 && r.version.major != major))
             continue;
         r.sumsUrl = sumsUrl;
         if (!best || r.version > best->version)

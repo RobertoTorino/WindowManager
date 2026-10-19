@@ -66,20 +66,33 @@ The desktop is KDE Plasma on Wayland. The X11 backend only sees XWayland windows
 
 ## Bugs found on Linux that also affect Windows
 
-Found while testing on Bazzite. Each is fixed in shared code on `linux-port`; the Windows build gets the
-fix with that code, but none has been built or checked on Windows yet.
+Found while testing on Bazzite. Each is fixed in shared code on `linux-port` (there is one source tree;
+`main` has the released Windows app without the Linux work). Checked on Windows on 2026-10-19: the
+`linux-port` branch builds with Clang 22 and the 9 tests pass.
 
-- **to fix on Windows:** with no target, the game dropdown showed the first game as if selected while
-  nothing was the target ("No target", "No game selected"). Fix: `GameBar::setGames` selects nothing.
-  Check: start with an empty `lastExePath`.
-- **to fix on Windows:** *Capture* said "Snapshot saved to ..." even when no shot was written (failed
-  capture or save). Fix: `SnapshotCapture` counts saved shots and reports a failure. Snapshots now go
-  through `PlatformBackend::captureWindow`, whose default (used by Win32) is the old screen capture.
-- **to fix on Windows:** the HelixSR tab's widgets overlapped (the buttons over the game list) when the
-  window was too short. The page fills in its texts while hidden, so the window's minimum never grew.
-  Fix: on a tab switch `MainWindow` grows the window to the layout's minimum. Shows with larger fonts or
-  display scaling (125 % and up).
-- **to fix on Windows:** `AppConfig::load()` kept the previous games and profiles when the config file
-  did not exist (only bites when the path changes, as in tests). Fix: it starts empty.
-- **to fix on Windows:** launching a Steam game logged the exe path although the app opened
-  `steam://rungameid/<id>`. Fix: the log names the URL.
+- **checked on Windows:** with no target, the game dropdown showed the first game as if selected.
+  Fix: `GameBar::setGames` selects nothing. Started with an empty `lastExePath`: the dropdown is empty.
+- **not checked on Windows:** *Capture* said "Snapshot saved to ..." even when no shot was written. Fix:
+  `SnapshotCapture` counts saved shots and reports a failure. Needs a running game to check.
+- **checked on Windows:** the HelixSR tab's widgets overlapped (the buttons over the game list). The
+  window's minimum ignores the extra lines of word-wrapped labels, so the first fix still overlapped
+  at 150 %. Fix: `MainWindow` caps the tabs at the page's height for its width, grows the window to
+  give them that (no taller than the screen) and moves it up if it would run off. Checked with
+  `QT_SCALE_FACTOR` 1, 1.25 and 1.5 on a 1920x1080 screen.
+- **checked by tests:** `AppConfig::load()` kept the previous games when the config file did not exist.
+- **not checked on Windows:** launching a Steam game logs the `steam://` URL. Needs a game launch.
+- **found and fixed on Windows:** Steam writes its library path in lower case on Windows, so the sync
+  added a second entry for a game already added by hand. `SteamLibrary` now uses the case on disk
+  (`tst_steamlibrary` `pathsHaveTheCaseOnDisk`).
+- **found and fixed on Windows:** `tst_steamlibrary` failed on Windows (`/nowhere/...` is stored as
+  `C:/nowhere/...`).
+
+## HelixSR 2.0.0 (released 2026-10-19)
+
+The app sets up and updates HelixSR 1.x only (`Helix::kSupportedMajor`). In 2.0.0, `-Yes` also answers
+the setup's game questions, so it would install HelixSR Scaler into every game it finds with frame
+generation on. Its installer API changed too: `install_list` and `uninstall_safe` are gone, and
+`games_from` moved to `helixsr_games.py`, so `resources/helixsr_driver.py` no longer fits. Supporting
+2.x means running HelixSR's `helixsr_setup.py` without the game step, and porting the driver to the new
+installer (the FSR DLL now lives in `HelixSR-fsrfg/`). Shader model 6.6 is still required (`cs_6_6`).
+Problems, evidence and the step-by-step plan (through 2.0's JSON `helixsr_bridge.py`): [docs/HELIXSR_2.md](docs/HELIXSR_2.md).

@@ -180,6 +180,30 @@ private slots:
         QVERIFY(tekken->exePath.endsWith("/TekkenGame/Binaries/Win64/TekkenGame-Win64-Shipping.exe"));
     }
 
+    void pathsHaveTheCaseOnDisk()
+    {
+#ifndef Q_OS_WIN
+        QSKIP("Only Windows file names ignore case");
+#else
+        // Steam writes "c:\program files (x86)\steam"; a game added by hand has the real case.
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString steam = QFileInfo(dir.filePath("Steam")).absoluteFilePath();
+        writeFile(steam + "/steamapps/libraryfolders.vdf",
+                  QString("\"libraryfolders\" { \"0\" { \"path\" \"%1\" } }")
+                      .arg(QDir::toNativeSeparators(steam).toLower().replace('\\', "\\\\"))
+                      .toUtf8());
+        writeFile(steam + "/steamapps/appmanifest_1593500.acf", manifest(1593500, "God of War", "godofwar"));
+        writeFile(steam + "/steamapps/common/GodOfWar/GoW.exe", QByteArray(2000, 'x'));
+
+        const QString real = QFileInfo(steam).canonicalFilePath();
+        const Scan scan = findGames({real.toLower()});
+        QCOMPARE(scan.libraries, QStringList{real});
+        QCOMPARE(scan.games.size(), 1);
+        QCOMPARE(scan.games.first().exePath, real + "/steamapps/common/GodOfWar/GoW.exe");
+#endif
+    }
+
     void syncAddsKeepsAndRemoves()
     {
         QTemporaryDir dir;
@@ -226,7 +250,7 @@ private slots:
         QCOMPARE(tekken->savedName, QString("MY_TEKKEN"));
 
         QVERIFY(!cfg.gameByPath(goneExe).has_value());
-        QVERIFY(cfg.gameByPath("/nowhere/steamapps/common/Away/away.exe").has_value());
+        QVERIFY(cfg.gameByPath(away.applicationPath).has_value());   // stored normalized ("C:/nowhere/..." on Windows)
 
         // a second run changes nothing
         const auto again = GameRegistry::syncSteamGames(scan);

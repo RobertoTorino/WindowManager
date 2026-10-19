@@ -24,9 +24,19 @@ Notable changes to WindowManager. The version number lives in `APP_VERSION` in `
 - Snapshots go through `PlatformBackend::captureWindow` (on Windows the same screen capture as before).
 
 ### Fixed
+- **HelixSR 2.0.0 is not set up.** Its setup, run unattended as this app does, goes on to install HelixSR
+  Scaler into every game it finds and turns on frame generation, and its installer no longer has the
+  functions the app's install helper calls. The app now sets up and updates HelixSR 1.x only (1.9.3) and
+  the tab says when a newer version is out that it does not support yet.
+- The system check's message for a card below shader model 6.6 no longer promises that a driver update
+  fixes it: HelixSR's shaders are built for 6.6, and a card whose newest driver stops at 6.5 cannot run it.
+- Windows: a Steam game that was already in the list (added by hand) was added a second time, because
+  Steam writes its library path in lower case. Steam paths now use the case on disk.
 - *Capture* no longer says "Snapshot saved" when no shot was written; it reports the failure.
 - The HelixSR tab's buttons no longer overlap its game list when the window is short (larger fonts or
-  display scaling): the window grows to fit the tab.
+  display scaling): the window grows to fit the tab, including the extra lines of wrapped text, and
+  stays on the screen.
+- `tst_steamlibrary` failed on Windows (a test path without a drive letter).
 - Launching a Steam game logs the `steam://` URL it opens.
 - Linux: Proton games are found again. Their image path is on drive S: (the Steam folder), which is now
   translated through the Wine prefix; `/var/home` and `/home` paths compare equal on Fedora Atomic systems.

@@ -111,6 +111,24 @@ Build directory for each preset: `build\<preset-name>\`
 
 ---
 
+## Linux (work in progress)
+
+The app builds on Linux and controls X11 / XWayland windows (see `docs/ARCHITECTURE.md`).
+Tested on Ubuntu 26.04 under WSL2 with WSLg:
+
+```
+sudo apt install build-essential cmake ninja-build pkg-config qt6-base-dev libxcb1-dev x11-utils xterm
+cmake -S . -B build/linux -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build build/linux
+ctest --test-dir build/linux --output-on-failure
+```
+
+`tst_x11backend` needs a display and `xterm`; without them it skips itself. Building from a
+Windows drive (`/mnt/c/...`) works, but put the build directory on the Linux side
+(for example `-B ~/wm-build`) for speed.
+
+---
+
 ## Versioning and releases
 
 The version lives in one place: `set(APP_VERSION "x.y.z")` at the top of

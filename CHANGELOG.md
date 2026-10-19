@@ -5,6 +5,20 @@ Notable changes to WindowManager. The version number lives in `APP_VERSION` in `
 
 ## Unreleased
 
+### Changed
+- **OS access moved behind `PlatformBackend`** (`src/platform/`), the first step of a Linux port. Window
+  listing, moving, styles, monitors, processes and screen capture now go through one interface;
+  `Win32Backend` is the only implementation, and behaviour on Windows is unchanged. The downscaled
+  view, the global hotkey and the Helix system probe are still Windows-only code.
+- **Linux (X11 / XWayland) backend**, work in progress: the app builds on Linux and `X11Backend` lists,
+  moves, resizes, strips the frame of, focuses and closes windows through xcb and the EWMH
+  conventions; processes come from `/proc` (a Wine/Proton process is reported under its Windows image
+  path). Not yet: the downscaled view, global hotkey, Layered / No-activate styles, launching through
+  Steam/Proton. `tst_x11backend` tests the backend against a real xterm.
+- `SteamMatch` (not used by the app yet): reads a Steam AppID from a window class or pasted text and
+  decides whether a window is the target game, for Proton games whose process cannot be matched by path.
+- New `tst_windowmanager` test runs `WindowManager` and `MonitorHelper` against a fake backend.
+
 ### Added
 - **HelixSR tab.** Sets up [HelixSR](https://github.com/lonewolf0622/HelixSR) (an FSR 3.1 upscaler
   for AMD GPUs) without leaving the app:

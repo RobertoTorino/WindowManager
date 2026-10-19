@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QtGlobal>
+
 #include <optional>
 #include <vector>
 
@@ -30,7 +32,7 @@ public:
     static std::optional<MonitorGeometry> getPrimaryMonitorGeometry();
 
     static int  getMonitorIndexFromPoint(int x, int y);
-    static int  getMonitorIndexFromWindow(void* hwnd);  // pass HWND
+    static int  getMonitorIndexFromWindow(quintptr window);   // monitor holding the window's centre
 
     static bool isPointOnMonitor(int x, int y, int monitorIndex);
 

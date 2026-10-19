@@ -3,6 +3,7 @@
 #include "GameRegistry.h"
 #include "WindowManagerController.h"
 #include "core/Logger.h"
+#include "platform/PlatformBackend.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -10,10 +11,9 @@
 #include <QFileInfo>
 #include <QImage>
 #include <QPixmap>
-#include <QProcess>
+#include <QDesktopServices>
+#include <QUrl>
 #include <QTimer>
-
-#include <Windows.h>
 
 SnapshotCapture::SnapshotCapture(WindowManagerController* controller, QObject* parent)
     : QObject(parent)
@@ -71,32 +71,18 @@ void SnapshotCapture::openFolder() const
 {
     const QString dir = GameRegistry::snapshotDirFor(m_controller->targetExecutable());
     QDir().mkpath(dir);
-    QProcess::startDetached("explorer.exe", {QDir::toNativeSeparators(dir)});
+    QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
 }
 
 void SnapshotCapture::captureOne()
 {
-    const HWND h = reinterpret_cast<HWND>(m_hwnd);
-    RECT wr{};
-    if (!h || !GetWindowRect(h, &wr))
-        return;
-    const int w  = wr.right - wr.left;
-    const int ht = wr.bottom - wr.top;
-    if (w <= 0 || ht <= 0)
+    PlatformBackend& os = platform();
+    Fit::Rect wr;
+    if (!m_hwnd || !os.windowRect(m_hwnd, wr))
         return;
 
-    // GDI BitBlt of the window's screen rectangle
-    HDC hdcScreen = GetDC(nullptr);
-    HDC hdcMem    = CreateCompatibleDC(hdcScreen);
-    HBITMAP hBmp  = CreateCompatibleBitmap(hdcScreen, w, ht);
-    HGDIOBJ hOld  = SelectObject(hdcMem, hBmp);
-    BitBlt(hdcMem, 0, 0, w, ht, hdcScreen, wr.left, wr.top, SRCCOPY);
-    SelectObject(hdcMem, hOld);
-    DeleteDC(hdcMem);
-    ReleaseDC(nullptr, hdcScreen);
-
-    const QPixmap pix = QPixmap::fromImage(QImage::fromHBITMAP(hBmp));
-    DeleteObject(hBmp);
+    // The window's screen rectangle
+    const QPixmap pix = QPixmap::fromImage(os.captureScreen(wr));
     if (pix.isNull())
         return;
 

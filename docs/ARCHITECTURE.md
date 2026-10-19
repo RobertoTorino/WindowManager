@@ -9,13 +9,20 @@ src/
   core/Logger.*                 Thread-safe rolling file logger (app log + one log per game)
   core/BuildInfo.h              Window title / About text: version, build number, date (from build_stamp.h)
   core/Utilities.*              String / path / timestamp helpers
-  window/WindowManager.*        Win32 logic: scan, move, resize, styles, launch, kill
-  window/MonitorHelper.*        Monitor enumeration and geometry
-  window/WindowStabilizer.*     WinEvent hook that re-applies a window's rectangle
+  window/WindowManager.*        Window policy: scan, move, resize, fit, launch, kill (no OS calls; uses platform())
+  window/MonitorHelper.*        Monitor indexes and geometry, read through platform()
+  window/WindowStabilizer.h     Re-applies a window's rectangle when the game moves it (per-platform .cpp)
+  platform/PlatformBackend.*    Interface to the OS (windows, monitors, processes, screen capture) and platform()
+  platform/win32/Win32Backend.cpp           The Windows implementation of PlatformBackend
+  platform/win32/Win32WindowStabilizer.cpp  WinEvent hook behind WindowStabilizer
+  platform/x11/X11Backend.cpp               The Linux implementation: xcb + EWMH for windows, QScreen for monitors, /proc for processes
+  platform/PollingWindowStabilizer.cpp      WindowStabilizer for systems without a move hook (checks every 100 ms)
+  platform/unsupported/                     Stand-ins for features a platform lacks (the downscaled view on Linux)
   window/KillPlanner.*          Pure logic: which processes belong to this session
   window/FitCalculator.*        Pure logic: fit-to-monitor maths (Fit::compute) and the
                                 launch-settle trigger (Fit::Trigger)
   window/Supersample.*          Pure logic: letterbox, render size, parking position
+  window/SteamMatch.*           Pure logic: Steam AppID from a window class / pasted text, and which window is the target game (not wired in yet)
   helix/HelixRelease.*          Pure logic: versions, GitHub release parsing, checksums, update decision
   helix/HelixGame.*             Pure logic: where a game's FSR 3.1 DLLs are, installed / replaced state
   helix/HelixPaths.*            Pure logic: on-disk layout, built-package marker, post-build leftovers
@@ -42,9 +49,11 @@ resources/                      Icon, arrow SVGs used by the stylesheet, Windows
 ## How the pieces talk
 
 ```
- buttons / table ──click──▶ WindowManagerController ──▶ WindowManager (Win32)
+ buttons / table ──click──▶ WindowManagerController ──▶ WindowManager
         ▲                          │
         └────── refresh() ◀── statusChanged()
+
+ WindowManager / MonitorHelper ──▶ PlatformBackend (interface) ──▶ Win32Backend
 ```
 
 - UI classes never call Win32 window APIs for the managed game. They call a
@@ -64,7 +73,7 @@ resources/                      Icon, arrow SVGs used by the stylesheet, Windows
 - **A new tab:** derive from `ControlPanel`, implement `refresh()` if needed, create it
   in `MainWindow::buildUi()` and add it to both `m_tabs` and `m_panels`. The tab area
   sizes itself to the current page, so no height bookkeeping is needed.
-- **A new window action:** add a method to `WindowManager` (Win32), a slot on
+- **A new window action:** add a method to `WindowManager` (it calls `platform()`; a new OS primitive goes on `PlatformBackend` and in every backend), a slot on
   `WindowManagerController` using `finish(ok, okMsg, failMsg)`, then connect it.
 
 ## Styling
@@ -210,9 +219,12 @@ unit-tested directly.
 | `tst_killplanner` | session scoping: unrelated loaders spared, descendants, orphans, pid reuse, ignore list |
 | `tst_fit` | fit maths (framed, borderless, negative-origin monitor, overscan, applied plan is stable) and the settle trigger (fires once, restarts on move/new window, ignores unusable windows, times out) |
 | `tst_supersample` | letterbox (side bars, top/bottom bars, never exceeds the area), render size per factor and shape, parking position (behind the overlay vs beyond the desktop, with a monitor above/next to it), mouse mapping (pixel centres, black bars ignored, clamping while dragging, never past the last pixel) |
+| `tst_steammatch` | AppID from `steam_app_<id>` classes and pasted text (store URL, run URL, bare number), AppID beats a Wine loader image, another Steam game never matches, path / exe-name fallback |
+| `tst_windowmanager` | `WindowManager` and `MonitorHelper` against a fake `PlatformBackend`: which windows a scan keeps and their order, borderless fullscreen, centring on another monitor, missing monitors, toggle messages, kill scope |
+| `tst_x11backend` | Linux only: the real X11 backend against an xterm (list, title, pid, move/resize, frame strip/restore, process info, terminate); skips itself without a display |
 | `tst_appconfig` | save/load round-trip, clearing profiles, corrupt/missing files, legacy keys, the HelixSR flag |
 | `tst_helix` | version parsing/ordering, release choice (no prereleases, the right zip), checksums, update decision, DLL version, game root, FSR DLL detection and installed / replaced state, async scan delivery, built-package marker and driver fingerprint, post-build leftovers, helixsr.ini parsing and in-place editing, GPU family and the can-this-PC-run-it verdict (a live probe of the test machine is printed too) |
 
-The UI and the Win32 window code are not unit-tested; they are checked by running the
+The UI and the real OS backend (`platform/win32/`) are not unit-tested; they are checked by running the
 app. New logic that can be written without Win32 or widgets (like `KillPlanner`) should
 go in a Win32-free unit with a test.

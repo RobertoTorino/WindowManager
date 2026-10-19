@@ -42,7 +42,9 @@
 #include <QTimer>
 #include <QVBoxLayout>
 
+#ifdef Q_OS_WIN
 #include <Windows.h>
+#endif
 
 namespace {
 
@@ -102,8 +104,10 @@ MainWindow::MainWindow(QWidget *parent)
             QTimer::singleShot(0, this, [this]() { raise(); });
     });
     // Global hotkey: the overlay covers the screen, so stopping must not need a click.
+#ifdef Q_OS_WIN
     RegisterHotKey(reinterpret_cast<HWND>(winId()), kStopViewHotkey,
                    MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 'D');
+#endif
 
     auto *monitorToggle = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_S), this);
     connect(monitorToggle, &QShortcut::activated, this, &MainWindow::toggleGameMonitor);
@@ -125,11 +129,14 @@ MainWindow::MainWindow(QWidget *parent)
 
 MainWindow::~MainWindow()
 {
+#ifdef Q_OS_WIN
     UnregisterHotKey(reinterpret_cast<HWND>(winId()), kStopViewHotkey);
+#endif
 }
 
 bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr *result)
 {
+#ifdef Q_OS_WIN
     Q_UNUSED(eventType);
     const MSG *msg = static_cast<const MSG *>(message);
     if (msg->message == WM_HOTKEY && msg->wParam == kStopViewHotkey) {
@@ -137,6 +144,7 @@ bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr
         *result = 0;
         return true;
     }
+#endif
     return QMainWindow::nativeEvent(eventType, message, result);
 }
 

@@ -2,10 +2,9 @@
 
 #include "config/AppConfig.h"
 #include "core/Logger.h"
+#include "platform/PlatformBackend.h"
 
 #include <QFileInfo>
-
-#include <Windows.h>
 
 namespace {
 
@@ -69,14 +68,13 @@ WindowManagerController::StyleState WindowManagerController::queryActiveWindowSt
     StyleState s;
     const quintptr hwnd = m_windowManager.activeWindow();
     if (!hwnd) return s;
-    const HWND h = reinterpret_cast<HWND>(hwnd);
-    if (!IsWindow(h)) return s;
+    const auto state = platform().windowState(hwnd);
+    if (!state.valid) return s;
 
-    const LONG_PTR ex = GetWindowLongPtr(h, GWL_EXSTYLE);
-    s.topmost    = (ex & WS_EX_TOPMOST) != 0;
-    s.toolWindow = (ex & WS_EX_TOOLWINDOW) != 0;
-    s.layered    = (ex & WS_EX_LAYERED) != 0;
-    s.noActivate = (ex & WS_EX_NOACTIVATE) != 0;
+    s.topmost    = state.topmost;
+    s.toolWindow = state.toolWindow;
+    s.layered    = state.layered;
+    s.noActivate = state.noActivate;
     return s;
 }
 
@@ -85,14 +83,13 @@ WindowManagerController::VisibilityState WindowManagerController::queryActiveWin
     VisibilityState v;
     const quintptr hwnd = m_windowManager.activeWindow();
     if (!hwnd) return v;
-    const HWND h = reinterpret_cast<HWND>(hwnd);
-    if (!IsWindow(h)) return v;
+    const auto state = platform().windowState(hwnd);
+    if (!state.valid) return v;
 
-    v.visible    = IsWindowVisible(h) != 0;
-    v.minimized  = IsIconic(h) != 0;
-    v.maximized  = IsZoomed(h) != 0;
-    const LONG_PTR style = GetWindowLongPtr(h, GWL_STYLE);
-    v.windowed   = (style & WS_CAPTION) != 0;
+    v.visible    = state.visible;
+    v.minimized  = state.minimized;
+    v.maximized  = state.maximized;
+    v.windowed   = state.hasCaption;
     return v;
 }
 

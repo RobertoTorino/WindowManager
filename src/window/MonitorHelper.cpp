@@ -1,82 +1,30 @@
 #include "MonitorHelper.h"
 
 #include "../core/Logger.h"
-
-#include <Windows.h>
+#include "../platform/PlatformBackend.h"
 
 #include <string>
 
-// ---------------------------------------------------------------------------
-// Internal enumeration helpers
-// ---------------------------------------------------------------------------
+namespace {
 
-struct EnumContext
+MonitorGeometry toGeometry(int index, const Fit::Rect& r)
 {
-    std::vector<MonitorGeometry> monitors;
-};
-
-static BOOL CALLBACK monitorEnumProc(HMONITOR hMon, HDC /*hdc*/,
-                                      LPRECT /*clip*/, LPARAM data)
-{
-    auto* ctx = reinterpret_cast<EnumContext*>(data);
-    MONITORINFO mi{};
-    mi.cbSize = sizeof(mi);
-    if (::GetMonitorInfoW(hMon, &mi)) {
-        MonitorGeometry mg;
-        mg.index = static_cast<int>(ctx->monitors.size()) + 1;
-        mg.x     = mi.rcMonitor.left;
-        mg.y     = mi.rcMonitor.top;
-        mg.w     = mi.rcMonitor.right  - mi.rcMonitor.left;
-        mg.h     = mi.rcMonitor.bottom - mi.rcMonitor.top;
-        ctx->monitors.push_back(mg);
-    }
-    return TRUE;
+    return MonitorGeometry{index, r.left, r.top, r.width(), r.height()};
 }
 
-// Work-area variant (excludes taskbar)
-struct WorkAreaEnumContext
-{
-    int targetIndex{0};
-    int current{0};
-    std::optional<MonitorGeometry> result;
-};
-
-static BOOL CALLBACK workAreaEnumProc(HMONITOR hMon, HDC, LPRECT, LPARAM data)
-{
-    auto* ctx = reinterpret_cast<WorkAreaEnumContext*>(data);
-    ctx->current++;
-    if (ctx->current == ctx->targetIndex) {
-        MONITORINFO mi{};
-        mi.cbSize = sizeof(mi);
-        if (::GetMonitorInfoW(hMon, &mi)) {
-            MonitorGeometry mg;
-            mg.index = ctx->targetIndex;
-            mg.x     = mi.rcWork.left;
-            mg.y     = mi.rcWork.top;
-            mg.w     = mi.rcWork.right  - mi.rcWork.left;
-            mg.h     = mi.rcWork.bottom - mi.rcWork.top;
-            ctx->result = mg;
-        }
-        return FALSE; // stop enumeration
-    }
-    return TRUE;
-}
-
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
+} // namespace
 
 std::vector<MonitorGeometry> MonitorHelper::enumerateMonitors()
 {
-    EnumContext ctx;
-    ::EnumDisplayMonitors(nullptr, nullptr, monitorEnumProc,
-                          reinterpret_cast<LPARAM>(&ctx));
-    return ctx.monitors;
+    std::vector<MonitorGeometry> out;
+    for (const auto& m : platform().monitors())
+        out.push_back(toGeometry(static_cast<int>(out.size()) + 1, m.full));
+    return out;
 }
 
 int MonitorHelper::getMonitorCount()
 {
-    return ::GetSystemMetrics(SM_CMONITORS);
+    return static_cast<int>(platform().monitors().size());
 }
 
 std::optional<MonitorGeometry> MonitorHelper::getMonitorGeometry(int index)
@@ -88,10 +36,10 @@ std::optional<MonitorGeometry> MonitorHelper::getMonitorGeometry(int index)
 
 std::optional<MonitorGeometry> MonitorHelper::getMonitorWorkArea(int index)
 {
-    WorkAreaEnumContext ctx{ index };
-    ::EnumDisplayMonitors(nullptr, nullptr, workAreaEnumProc,
-                          reinterpret_cast<LPARAM>(&ctx));
-    return ctx.result;
+    const auto monitors = platform().monitors();
+    if (index < 1 || index > static_cast<int>(monitors.size()))
+        return std::nullopt;
+    return toGeometry(index, monitors[static_cast<size_t>(index) - 1].work);
 }
 
 std::optional<MonitorGeometry> MonitorHelper::getPrimaryMonitorGeometry()
@@ -106,12 +54,12 @@ int MonitorHelper::getMonitorIndexFromPoint(int x, int y)
     return 1;
 }
 
-int MonitorHelper::getMonitorIndexFromWindow(void* hwnd)
+int MonitorHelper::getMonitorIndexFromWindow(quintptr window)
 {
-    RECT r{};
-    if (!::GetWindowRect(static_cast<HWND>(hwnd), &r)) return 1;
-    const int cx = r.left + (r.right  - r.left) / 2;
-    const int cy = r.top  + (r.bottom - r.top)  / 2;
+    Fit::Rect r;
+    if (!platform().windowRect(window, r)) return 1;
+    const int cx = r.left + r.width() / 2;
+    const int cy = r.top  + r.height() / 2;
     return getMonitorIndexFromPoint(cx, cy);
 }
 

@@ -8,7 +8,9 @@
 #include <filesystem>
 #include <string>
 
+#ifdef Q_OS_WIN
 #include <Windows.h>
+#endif
 
 static void qtMessageHandler(QtMsgType type, const QMessageLogContext& ctx, const QString& msg)
 {
@@ -27,12 +29,17 @@ static void qtMessageHandler(QtMsgType type, const QMessageLogContext& ctx, cons
 
 int main(int argc, char *argv[])
 {
+#ifdef Q_OS_LINUX
+    // Window control goes through X11 (XWayland is fine), so Qt must use the same coordinates.
+    if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM"))
+        qputenv("QT_QPA_PLATFORM", "xcb");
+#endif
     QApplication app(argc, argv);
 
     // Log next to the executable. applicationDirPath() is absolute, unlike
     // argv[0], which may be relative or just a bare name.
     Logger::instance().setLogFile(
-        std::filesystem::path(QCoreApplication::applicationDirPath().toStdWString())
+        std::filesystem::path(QCoreApplication::applicationDirPath().toStdU16String())
         / "windowmanager.log");
     qInstallMessageHandler(qtMessageHandler);
 

@@ -17,6 +17,7 @@ window from drifting, and grab screenshots. Built with C++20 and Qt 6.
 - [Help pages](docs/help/getting-started.md) (also shown in the app under Help)
 - [Building and testing](BUILD.md)
 - [Changelog](CHANGELOG.md)
+- [Linux port (work in progress)](docs/LINUX_PORT.md)
 - [Code layout](docs/ARCHITECTURE.md)
 
 ---

@@ -27,6 +27,8 @@ mono_crash.*
 x64/
 x86/
 [Ww][Ii][Nn]32/
+# ...but not the Windows platform backend (source code, not build output)
+!src/platform/win32/
 [Aa][Rr][Mm]/
 [Aa][Rr][Mm]64/
 bld/

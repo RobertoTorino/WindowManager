@@ -24,13 +24,18 @@ struct Package
 {
     QString dir;       // <data dir>/HelixSR-<version>
     Version version;
+    QString driver;    // fingerprint of the helper script that passed the self-test; empty if none yet
 };
 
 // The newest package in `data` that finished building (see markBuilt); nullopt if none.
 std::optional<Package> builtPackage(const QString& data);
 
-// Records that the network in `packageDir` was built completely.
-bool markBuilt(const QString& packageDir, const Version& version);
+// Short fingerprint of the install helper script (resources/helixsr_driver.py).
+QString driverFingerprint(const QByteArray& script);
+
+// Records that the network in `packageDir` was built completely, and (optionally) which helper
+// script was checked against this package.
+bool markBuilt(const QString& packageDir, const Version& version, const QString& driver = {});
 
 // Folders of other versions in `data` (built or half-built) that are not `keepDir`.
 QStringList otherPackages(const QString& data, const QString& keepDir);

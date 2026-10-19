@@ -5,6 +5,8 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QPointer>
+#include <QThreadPool>
 
 namespace Helix {
 
@@ -132,6 +134,20 @@ GameScan scanGame(const QString& exePath)
         }
     }
     return scan;
+}
+
+void scanGameAsync(QObject* context, const QString& exePath, std::function<void(const GameScan&)> done)
+{
+    QPointer<QObject> target(context);
+    QThreadPool::globalInstance()->start([target, exePath, done = std::move(done)]() {
+        const GameScan scan = scanGame(exePath);
+        if (!target)
+            return;
+        QMetaObject::invokeMethod(target.data(), [target, scan, done]() {
+            if (target)
+                done(scan);
+        }, Qt::QueuedConnection);
+    });
 }
 
 } // namespace Helix

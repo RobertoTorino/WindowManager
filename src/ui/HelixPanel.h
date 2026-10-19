@@ -1,14 +1,19 @@
 #pragma once
 
+#include <functional>
+
 #include <QElapsedTimer>
 #include <QHash>
 #include <QStringList>
 
 #include "helix/HelixGame.h"
+#include "helix/HelixIni.h"
 #include "helix/HelixSystem.h"
 #include "ui/ControlPanels.h"
 
 class HelixSetup;
+class QComboBox;
+class QDoubleSpinBox;
 class QLabel;
 class QListWidget;
 class QProgressBar;
@@ -37,7 +42,10 @@ signals:
     void updateAvailableChanged(bool available);
 
 private:
-    void rebuildGames();
+    void rebuildGames(std::function<void()> then = {});   // scans run in the background; then() after the last
+    void loadIni();
+    void saveIni();
+    QStringList iniPaths(const Helix::GameScan& scan) const;
     void updateButtons();
     void updateSetupLabels();
     void runSystemCheck();
@@ -63,6 +71,8 @@ private:
     QLabel*       m_system;
     QPushButton*  m_checkPc;
     QLabel*       m_state;
+    QLabel*       m_driverWarning;
+    QPushButton*  m_openFolder;
     QProgressBar* m_progress;
     QLabel*       m_elapsed;
     QPushButton*  m_setupButton;
@@ -77,6 +87,11 @@ private:
     QPushButton*  m_forget;
     QLabel*       m_gameHint;
 
+    QComboBox*      m_sharpener;     // helixsr.ini of the selected game
+    QDoubleSpinBox* m_sharpness;
+    QComboBox*      m_waveSize;
+    QPushButton*    m_applyIni;
+
     Helix::Verdict m_verdict;                  // this PC against HelixSR's requirements
     QTimer*        m_clock;
     QElapsedTimer  m_elapsedTimer;
@@ -84,4 +99,8 @@ private:
     QString        m_runAfterInstall;
     QStringList    m_queue;                    // games waiting for an update after a new HelixSR build
     bool           m_lastUpdateFlag{false};
+    bool           m_checking{false};          // a game is being looked at (Check / Run) in the background
+    int            m_scanGeneration{0};        // results of an older list are dropped
+    int            m_pendingScans{0};
+    std::function<void()> m_afterScans;
 };

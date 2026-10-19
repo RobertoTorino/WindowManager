@@ -83,6 +83,8 @@ set(WINDOW_MANAGER_SOURCES
     src/helix/HelixGame.cpp
     src/helix/HelixPaths.h
     src/helix/HelixPaths.cpp
+    src/helix/HelixIni.h
+    src/helix/HelixIni.cpp
     src/helix/HelixSystem.h
     src/helix/HelixSystem.cpp
     src/helix/SystemProbe.h
@@ -179,7 +181,7 @@ if(WINDOWMANAGER_BUILD_TESTS)
     add_wm_test(tst_appconfig   src/config/AppConfig.cpp src/core/Logger.cpp)
     add_wm_test(tst_helix       src/helix/HelixRelease.cpp src/helix/HelixGame.cpp
                                 src/helix/HelixPaths.cpp src/helix/HelixSystem.cpp
-                                src/helix/SystemProbe.cpp)
+                                src/helix/HelixIni.cpp src/helix/SystemProbe.cpp)
     if(WIN32)
         target_link_libraries(tst_helix PRIVATE d3d12 dxgi)   # SystemProbe asks the GPU driver
     endif()

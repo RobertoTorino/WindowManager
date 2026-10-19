@@ -89,6 +89,8 @@ public slots:
     // Process control
     void launchTarget();
     void killTarget();
+    bool isTargetRunning() const { return m_windowManager.isTargetRunning(); }
+    static bool isRunning(const QString& exePath) { return WindowManager::isExeRunning(exePath); }
         void focusTarget();
 
     // Resolution + display mode combos

@@ -166,6 +166,10 @@ on AMD GPUs. The **HelixSR** tab automates its setup:
 4. **Run with HelixSR** installs it into the game (the game's own DLL is kept as
    `*.original.dll`) and starts the game; choose *AMD FSR* in the game. **Remove** restores it.
 
+With HelixSR installed in a game, the tab also edits its `helixsr.ini` (sharpening, strength, wave size). After a
+build the app checks HelixSR's installer on a throw-away folder; if a new HelixSR changed it, installing is switched
+off with a message instead of failing in front of a game.
+
 Only the FSR 3.1 drop-in is supported (not HelixSR Scaler). The built DLL contains NVIDIA's network:
 keep it on your PC. Details: [HelixSR help page](docs/help/helixsr.md).
 
@@ -196,7 +200,7 @@ keep it on your PC. Details: [HelixSR help page](docs/help/helixsr.md).
 |---|---|
 | Dropdown | Your saved games. Type to filter. Picking one makes it the target. |
 | **Add game...** | Register an `.exe`/`.bat`/`.cmd` and name it. |
-| **Start** | Launch the selected game. |
+| **Start** | Launch the selected game. If a game is already running, asks whether to close it first (a game is never started twice). |
 | **Restart** | Terminate it, then launch it again. |
 | **Kill** | Terminate it. |
 

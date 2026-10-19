@@ -43,6 +43,8 @@ private:
     void addGame();
     void startSelectedGame();
     void runWithHelix(const QString &exePath);
+    void launchGame(const QString &exePath);
+    void launchWhenFree(const QString &exePath);
     void restartSelectedGame();
     void killSelectedGame();
     void shutdownTarget();

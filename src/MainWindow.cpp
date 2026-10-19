@@ -336,17 +336,79 @@ void MainWindow::addGame()
 void MainWindow::startSelectedGame()
 {
     const QString path = m_gameBar->selectedPath();
-    if (path.isEmpty())
-        return;
-    m_controller->setTargetExecutable(path);
-    m_controller->launchTarget();
+    if (!path.isEmpty())
+        launchGame(path);
 }
 
 void MainWindow::runWithHelix(const QString &exePath)
 {
     m_controller->setTargetExecutable(exePath);
     refreshGames();   // show it in the game bar
-    m_controller->launchTarget();
+    launchGame(exePath);
+}
+
+// Starts a game, never a second copy: a running game (this one or another) has to be closed first.
+void MainWindow::launchGame(const QString &exePath)
+{
+    const auto nameOf = [](const QString &path) {
+        const auto game = AppConfig::instance().gameByPath(GameRegistry::normalizePath(path));
+        return game && !game->savedName.isEmpty() ? game->savedName : QFileInfo(path).fileName();
+    };
+
+    QStringList running;   // paths
+    if (WindowManagerController::isRunning(exePath))
+        running << exePath;
+    for (const auto &game : AppConfig::instance().games())
+        if (QDir::cleanPath(game.applicationPath).compare(QDir::cleanPath(exePath), Qt::CaseInsensitive) != 0
+            && WindowManagerController::isRunning(game.applicationPath))
+            running << game.applicationPath;
+
+    if (!running.isEmpty()) {
+        QStringList names;
+        for (const auto &path : running)
+            names << nameOf(path);
+        const bool same = running.contains(exePath);
+        QMessageBox box(QMessageBox::Warning, "Game already running", QString(), QMessageBox::NoButton, this);
+        box.setText(same ? QString("%1 is already running.").arg(names.join(", "))
+                         : QString("%1 is running.").arg(names.join(", ")));
+        box.setInformativeText(QString("Close it and start %1? This force-closes it. Unsaved progress will be lost.")
+                                   .arg(nameOf(exePath)));
+        auto *close  = box.addButton(same ? "Close and restart" : "Close and start",
+                                     QMessageBox::DestructiveRole);
+        auto *cancel = box.addButton(QMessageBox::Cancel);
+        box.setDefaultButton(cancel);
+        box.setEscapeButton(cancel);
+        box.exec();
+        if (box.clickedButton() != close)
+            return;
+        for (const auto &path : running) {
+            m_controller->setTargetExecutable(path);
+            m_controller->killTarget();
+        }
+    }
+    launchWhenFree(exePath);
+}
+
+// Launches once no old process is left (launchTarget refuses while one runs).
+void MainWindow::launchWhenFree(const QString &exePath)
+{
+    m_controller->setTargetExecutable(exePath);
+    if (!m_controller->isTargetRunning()) {
+        m_controller->launchTarget();
+        return;
+    }
+    auto *timer = new QTimer(this);
+    timer->setInterval(200);
+    int ticks = 0;
+    connect(timer, &QTimer::timeout, this, [this, timer, exePath, ticks]() mutable {
+        m_controller->setTargetExecutable(exePath);
+        if (m_controller->isTargetRunning() && ++ticks < 25)   // give up after 5 s
+            return;
+        timer->stop();
+        timer->deleteLater();
+        m_controller->launchTarget();
+    });
+    timer->start();
 }
 
 void MainWindow::restartSelectedGame()
@@ -358,10 +420,7 @@ void MainWindow::restartSelectedGame()
         return;
     m_controller->setTargetExecutable(path);
     m_controller->killTarget();
-    QTimer::singleShot(350, this, [this, path]() {
-        m_controller->setTargetExecutable(path);
-        m_controller->launchTarget();
-    });
+    launchWhenFree(path);
 }
 
 void MainWindow::killSelectedGame()

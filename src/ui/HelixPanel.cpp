@@ -11,6 +11,10 @@
 #include <algorithm>
 
 #include <QDir>
+#include <QComboBox>
+#include <QDesktopServices>
+#include <QDoubleSpinBox>
+#include <QFile>
 #include <QFileInfo>
 #include <QGridLayout>
 #include <QGroupBox>
@@ -19,6 +23,8 @@
 #include <QListWidget>
 #include <QMessageBox>
 #include <QProgressBar>
+#include <QSignalBlocker>
+#include <QUrl>
 #include <QPushButton>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -26,6 +32,7 @@
 namespace {
 
 constexpr int kPathRole = Qt::UserRole;
+constexpr int kNameRole = Qt::UserRole + 1;
 
 QString clockText(qint64 ms)
 {
@@ -55,6 +62,10 @@ HelixPanel::HelixPanel(WindowManagerController* c, QWidget* parent)
     m_state = new QLabel(this);
     m_state->setObjectName("hint");
     m_state->setWordWrap(true);
+    m_driverWarning = new QLabel(this);
+    m_driverWarning->setWordWrap(true);
+    m_driverWarning->setVisible(false);
+    m_openFolder = Theme::button("Open folder", this, nullptr, "Show the HelixSR folder (for installing by hand with helixsr-setup)");
     m_progress = new QProgressBar(this);
     m_progress->setTextVisible(true);
     m_elapsed = new QLabel(this);
@@ -67,6 +78,7 @@ HelixPanel::HelixPanel(WindowManagerController* c, QWidget* parent)
     buttons->addWidget(m_setupButton);
     buttons->addWidget(m_check);
     buttons->addWidget(m_checkPc);
+    buttons->addWidget(m_openFolder);
     buttons->addWidget(m_cancel);
     buttons->addStretch(1);
 
@@ -80,6 +92,7 @@ HelixPanel::HelixPanel(WindowManagerController* c, QWidget* parent)
     top->addLayout(buttons);
     top->addLayout(progressRow);
     top->addWidget(m_state);
+    top->addWidget(m_driverWarning);
 
     // --- games ---
     m_games = new QListWidget(this);
@@ -99,6 +112,33 @@ HelixPanel::HelixPanel(WindowManagerController* c, QWidget* parent)
     m_gameHint->setText("Select a game in the game bar, then press \"Check selected game\". Games with an AMD FSR 3.1 "
                         "DLL are listed here. In the game, choose AMD FSR as the upscaler.");
 
+    // helixsr.ini of the selected game (only when HelixSR is installed in it)
+    m_sharpener = new QComboBox(this);
+    for (const QString& s : Helix::kSharpeners)
+        m_sharpener->addItem(s);
+    m_sharpener->setToolTip("off, nvidia or rcas: an optional sharpening pass after upscaling");
+    m_sharpness = new QDoubleSpinBox(this);
+    m_sharpness->setRange(0.0, 1.0);
+    m_sharpness->setSingleStep(0.05);
+    m_sharpness->setDecimals(2);
+    m_sharpness->setToolTip("0.0 to 1.0, used when a sharpener is on");
+    m_waveSize = new QComboBox(this);
+    for (const QString& s : Helix::kWaveSizes)
+        m_waveSize->addItem(s);
+    m_waveSize->setToolTip("Leave on auto unless the picture is broken (32 or 64 force the SIMD width)");
+    m_applyIni = Theme::button("Save settings", this, nullptr,
+                               "Write helixsr.ini next to HelixSR's DLL; restart the game for it to apply");
+
+    auto* iniRow = new QHBoxLayout;
+    iniRow->addWidget(new QLabel("Sharpening", this));
+    iniRow->addWidget(m_sharpener);
+    iniRow->addWidget(new QLabel("Strength", this));
+    iniRow->addWidget(m_sharpness);
+    iniRow->addWidget(new QLabel("Wave size", this));
+    iniRow->addWidget(m_waveSize);
+    iniRow->addWidget(m_applyIni);
+    iniRow->addStretch(1);
+
     auto* gameButtons = new QHBoxLayout;
     gameButtons->addWidget(m_confirm);
     gameButtons->addStretch(1);
@@ -110,6 +150,7 @@ HelixPanel::HelixPanel(WindowManagerController* c, QWidget* parent)
     auto* games = new QVBoxLayout;
     games->addWidget(m_games, 1);
     games->addLayout(gameButtons);
+    games->addLayout(iniRow);
     games->addWidget(m_gameHint);
 
     auto* topBox = new QGroupBox("HelixSR (FSR 3.1 upscaler for AMD GPUs)", this);
@@ -127,6 +168,14 @@ HelixPanel::HelixPanel(WindowManagerController* c, QWidget* parent)
     // --- wiring ---
     connect(m_setupButton, &QPushButton::clicked, this, &HelixPanel::setUpOrUpdate);
     connect(m_check, &QPushButton::clicked, m_setup, &HelixSetup::checkForUpdate);
+    connect(m_openFolder, &QPushButton::clicked, this, [this]() {
+        if (!m_setup->packageDir().isEmpty())
+            QDesktopServices::openUrl(QUrl::fromLocalFile(m_setup->packageDir()));
+    });
+    connect(m_applyIni, &QPushButton::clicked, this, &HelixPanel::saveIni);
+    connect(m_sharpener, &QComboBox::currentTextChanged, this, [this](const QString& value) {
+        m_sharpness->setEnabled(m_applyIni->isEnabled() && value != "off");
+    });
     connect(m_checkPc, &QPushButton::clicked, this, &HelixPanel::showSystemCheck);
     connect(m_cancel, &QPushButton::clicked, m_setup, &HelixSetup::cancel);
     connect(m_confirm, &QPushButton::clicked, this, &HelixPanel::confirmCurrentGame);
@@ -134,7 +183,10 @@ HelixPanel::HelixPanel(WindowManagerController* c, QWidget* parent)
     connect(m_install, &QPushButton::clicked, this, &HelixPanel::installSelected);
     connect(m_remove, &QPushButton::clicked, this, &HelixPanel::removeSelected);
     connect(m_run, &QPushButton::clicked, this, &HelixPanel::runSelected);
-    connect(m_games, &QListWidget::itemSelectionChanged, this, &HelixPanel::updateButtons);
+    connect(m_games, &QListWidget::itemSelectionChanged, this, [this]() {
+        loadIni();
+        updateButtons();
+    });
     connect(m_games, &QListWidget::itemDoubleClicked, this, &HelixPanel::runSelected);
 
     connect(m_clock, &QTimer::timeout, this, &HelixPanel::updateSetupLabels);
@@ -158,12 +210,16 @@ HelixPanel::HelixPanel(WindowManagerController* c, QWidget* parent)
     });
     connect(m_setup, &HelixSetup::buildFinished, this, [this](bool ok, const QString& text) {
         emit message(text);
-        rebuildGames();
-        if (!ok) {
+        if (!ok || !m_setup->driverOk()) {
+            rebuildGames();
             QMessageBox::warning(this, "HelixSR", text);
             return;
         }
-        updateOutdatedGames();
+        rebuildGames([this]() { updateOutdatedGames(); });
+    });
+    connect(m_setup, &HelixSetup::driverChecked, this, [this](bool ok, const QString& text) {
+        emit message(ok ? QString("HelixSR's installer checked: it works with this version.") : text);
+        rebuildGames();
     });
     connect(m_setup, &HelixSetup::gameJobFinished, this,
             [this](const QString& path, bool install, bool ok, const QString& text) {
@@ -223,6 +279,11 @@ void HelixPanel::updateSetupLabels()
                          : QString("The first set-up downloads about 140 MB and builds the network on this PC "
                                    "(5 to 6 minutes)."));
 
+    const QString problem = m_setup->driverProblem();
+    m_driverWarning->setVisible(installed && !busy && !problem.isEmpty());
+    m_driverWarning->setText("Installing into games is switched off: " + problem);
+    m_openFolder->setEnabled(!m_setup->packageDir().isEmpty());
+
     m_progress->setVisible(busy);
     m_elapsed->setVisible(busy);
     if (busy) {
@@ -264,17 +325,23 @@ void HelixPanel::updateButtons()
 
     const QString path = selectedPath();
     const auto scan = scanOf(path);
-    const bool ready = m_setup->ready();
+    const bool ready = m_setup->canInstall();
 
-    m_confirm->setEnabled(!busy && !m_controller->targetExecutable().isEmpty());
+    m_confirm->setEnabled(!busy && !m_checking && !m_controller->targetExecutable().isEmpty());
     m_forget->setEnabled(!busy && scan.has_value());
     m_install->setText(scan && scan->status == Status::Installed ? "Reinstall" : "Install");
     m_install->setEnabled(!busy && ready && scan && scan->status != Status::Unsupported);
     m_remove->setEnabled(!busy && ready && scan
                          && (scan->status == Status::Installed || scan->status == Status::Replaced));
-    m_run->setEnabled(!busy && ready && scan && scan->status != Status::Unsupported);
-    if (!ready)
-        m_run->setToolTip("Set up HelixSR first.");
+    m_run->setEnabled(!busy && !m_checking && ready && scan && scan->status != Status::Unsupported);
+    m_run->setToolTip(ready ? QString("Install HelixSR if needed, then start the game. In the game, select AMD FSR.")
+                      : !m_setup->installedVersion() ? QString("Set up HelixSR first.")
+                                                     : QString("Installing into games is switched off (see the warning above)."));
+
+    const bool iniUsable = !busy && scan && scan->status == Status::Installed;
+    for (QWidget* w : {static_cast<QWidget*>(m_sharpener), static_cast<QWidget*>(m_waveSize), static_cast<QWidget*>(m_applyIni)})
+        w->setEnabled(iniUsable);
+    m_sharpness->setEnabled(iniUsable && m_sharpener->currentText() != "off");
 }
 
 // ---------------------------------------------------------------------------
@@ -322,11 +389,13 @@ QString HelixPanel::statusText(const Helix::GameScan& scan) const
     return text;
 }
 
-void HelixPanel::rebuildGames()
+void HelixPanel::rebuildGames(std::function<void()> then)
 {
     const QString keep = selectedPath();
     m_games->clear();
     m_scans.clear();
+    ++m_scanGeneration;
+    m_afterScans = std::move(then);
 
     auto games = AppConfig::instance().games();
     games.erase(std::remove_if(games.begin(), games.end(), [](const auto& g) { return !g.helixConfirmed; }),
@@ -335,17 +404,44 @@ void HelixPanel::rebuildGames()
         return a.savedName.toUpper() < b.savedName.toUpper();
     });
 
+    // The list shows at once; each game's folder is looked through in the background.
+    m_pendingScans = static_cast<int>(games.size());
     for (const auto& g : games) {
-        const auto scan = Helix::scanGame(g.applicationPath);
-        m_scans.insert(g.applicationPath, scan);
-        auto* item = new QListWidgetItem(QString("%1  -  %2").arg(g.savedName, statusText(scan)), m_games);
+        auto* item = new QListWidgetItem(QString("%1  -  checking...").arg(g.savedName), m_games);
         item->setData(kPathRole, g.applicationPath);
+        item->setData(kNameRole, g.savedName);
         item->setToolTip(g.applicationPath);
         if (g.applicationPath == keep)
             m_games->setCurrentItem(item);
+
+        Helix::scanGameAsync(this, g.applicationPath,
+                             [this, generation = m_scanGeneration, path = g.applicationPath](const Helix::GameScan& scan) {
+            if (generation != m_scanGeneration)
+                return;   // the list was rebuilt meanwhile
+            m_scans.insert(path, scan);
+            for (int i = 0; i < m_games->count(); ++i) {
+                auto* row = m_games->item(i);
+                if (row->data(kPathRole).toString() == path)
+                    row->setText(QString("%1  -  %2").arg(row->data(kNameRole).toString(), statusText(scan)));
+            }
+            if (path == selectedPath())
+                loadIni();
+            updateButtons();
+            if (--m_pendingScans == 0 && m_afterScans) {
+                auto after = std::move(m_afterScans);
+                m_afterScans = nullptr;
+                after();
+            }
+        });
     }
     if (!m_games->currentItem() && m_games->count() > 0)
         m_games->setCurrentRow(0);
+    if (games.isEmpty() && m_afterScans) {
+        auto after = std::move(m_afterScans);
+        m_afterScans = nullptr;
+        after();
+    }
+    loadIni();
     updateButtons();
     updateSetupLabels();
 }
@@ -353,29 +449,37 @@ void HelixPanel::rebuildGames()
 void HelixPanel::confirmCurrentGame()
 {
     const QString exe = m_controller->targetExecutable();
-    if (exe.isEmpty())
+    if (exe.isEmpty() || m_checking)
         return;
     const QString path = GameRegistry::normalizePath(exe);
-    const auto scan = Helix::scanGame(path);
-    if (scan.targets.isEmpty()) {
-        QMessageBox::information(
-            this, "HelixSR - " + gameName(path),
-            "No AMD FSR 3.1 DLL (amd_fidelityfx_dx12.dll or amd_fidelityfx_upscaler_dx12.dll) was found in "
-            "this game's folder, so HelixSR cannot replace its upscaler.\n\nGames that only offer DLSS or XeSS "
-            "need HelixSR Scaler, which this app does not install.\n\nSearched: " + scan.root);
-        return;
-    }
+    m_checking = true;
+    updateButtons();
+    emit message("Looking for an AMD FSR 3.1 DLL in " + gameName(path) + "...");
 
-    auto entry = AppConfig::instance().gameByPath(path)
-                     .value_or(GameRegistry::buildEntry(path, GameRegistry::defaultFriendlyName(path)));
-    entry.helixConfirmed = true;
-    AppConfig::instance().saveGame(entry);
-    emit message(QString("%1 has an AMD FSR 3.1 DLL and is now on the HelixSR list.").arg(entry.savedName));
-    rebuildGames();
-    for (int i = 0; i < m_games->count(); ++i) {
-        if (m_games->item(i)->data(kPathRole).toString() == path)
-            m_games->setCurrentRow(i);
-    }
+    Helix::scanGameAsync(this, path, [this, path](const Helix::GameScan& scan) {
+        m_checking = false;
+        updateButtons();
+        if (scan.targets.isEmpty()) {
+            emit message(gameName(path) + ": no AMD FSR 3.1 DLL found.");
+            QMessageBox::information(
+                this, "HelixSR - " + gameName(path),
+                "No AMD FSR 3.1 DLL (amd_fidelityfx_dx12.dll or amd_fidelityfx_upscaler_dx12.dll) was found in "
+                "this game's folder, so HelixSR cannot replace its upscaler.\n\nGames that only offer DLSS or XeSS "
+                "need HelixSR Scaler, which this app does not install.\n\nSearched: " + scan.root);
+            return;
+        }
+
+        auto entry = AppConfig::instance().gameByPath(path)
+                         .value_or(GameRegistry::buildEntry(path, GameRegistry::defaultFriendlyName(path)));
+        entry.helixConfirmed = true;
+        AppConfig::instance().saveGame(entry);
+        emit message(QString("%1 has an AMD FSR 3.1 DLL and is now on the HelixSR list.").arg(entry.savedName));
+        rebuildGames();
+        for (int i = 0; i < m_games->count(); ++i) {
+            if (m_games->item(i)->data(kPathRole).toString() == path)
+                m_games->setCurrentRow(i);
+        }
+    });
 }
 
 void HelixPanel::forgetSelectedGame()
@@ -407,23 +511,94 @@ void HelixPanel::runSelected()
 {
     using Status = Helix::GameScan::Status;
     const QString path = selectedPath();
-    if (path.isEmpty() || m_setup->busy() || !m_setup->ready())
+    if (path.isEmpty() || m_checking || m_setup->busy() || !m_setup->canInstall())
         return;
 
-    // the game may have been updated since the list was built
-    const auto scan = Helix::scanGame(path);
-    if (scan.status == Status::Unsupported) {
-        rebuildGames();
-        QMessageBox::warning(this, "HelixSR - " + gameName(path),
-                             "The game no longer has an AMD FSR 3.1 DLL, so HelixSR cannot be used.");
-        return;
+    // the game may have been updated since the list was built: look again, in the background
+    m_checking = true;
+    updateButtons();
+    Helix::scanGameAsync(this, path, [this, path](const Helix::GameScan& scan) {
+        m_checking = false;
+        updateButtons();
+        if (m_setup->busy())
+            return;
+        if (scan.status == Status::Unsupported) {
+            rebuildGames();
+            QMessageBox::warning(this, "HelixSR - " + gameName(path),
+                                 "The game no longer has an AMD FSR 3.1 DLL, so HelixSR cannot be used.");
+            return;
+        }
+        if (scan.status == Status::Installed) {
+            emit runRequested(path);
+            return;
+        }
+        m_runAfterInstall = path;
+        m_setup->installIntoGame(path);   // starts the game when it succeeds
+    });
+}
+
+// ---------------------------------------------------------------------------
+// helixsr.ini of the selected game
+// ---------------------------------------------------------------------------
+
+// The helixsr.ini files next to HelixSR's DLLs in the game.
+QStringList HelixPanel::iniPaths(const Helix::GameScan& scan) const
+{
+    QStringList out;
+    for (const QString& dll : scan.targets) {
+        if (Helix::isHelixDll(dll))
+            out << QFileInfo(dll).absolutePath() + "/helixsr.ini";
     }
-    if (scan.status == Status::Installed) {
-        emit runRequested(path);
-        return;
+    return out;
+}
+
+void HelixPanel::loadIni()
+{
+    Helix::IniSettings settings;
+    const auto scan = scanOf(selectedPath());
+    if (scan && scan->status == Helix::GameScan::Status::Installed) {
+        const QStringList paths = iniPaths(*scan);
+        QFile f(paths.isEmpty() ? QString() : paths.first());
+        if (f.open(QIODevice::ReadOnly | QIODevice::Text))
+            settings = Helix::parseIni(QString::fromUtf8(f.readAll()));
     }
-    m_runAfterInstall = path;
-    m_setup->installIntoGame(path);   // starts the game when it succeeds
+    const QSignalBlocker a(m_sharpener), b(m_sharpness), c(m_waveSize);
+    m_sharpener->setCurrentText(settings.sharpener);
+    m_sharpness->setValue(settings.sharpness);
+    m_waveSize->setCurrentText(settings.waveSize);
+}
+
+void HelixPanel::saveIni()
+{
+    const auto scan = scanOf(selectedPath());
+    if (!scan || scan->status != Helix::GameScan::Status::Installed)
+        return;
+
+    Helix::IniSettings settings;
+    settings.sharpener = m_sharpener->currentText();
+    settings.sharpness = m_sharpness->value();
+    settings.waveSize = m_waveSize->currentText();
+
+    int saved = 0;
+    for (const QString& path : iniPaths(*scan)) {
+        // keep what the file already says (comments, other keys); a missing file is created
+        QString text;
+        QFile in(path);
+        if (in.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            text = QString::fromUtf8(in.readAll());
+            in.close();
+        }
+        QFile out(path);
+        if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate)
+            || out.write(Helix::applyIni(text, settings).toUtf8()) < 0) {
+            QMessageBox::warning(this, "HelixSR - " + gameName(selectedPath()),
+                                 "Could not write " + path + ".\nIs the game still running?");
+            return;
+        }
+        ++saved;
+    }
+    emit message(QString("%1: HelixSR settings saved (%2 file%3). Restart the game for them to apply.")
+                     .arg(gameName(selectedPath())).arg(saved).arg(saved == 1 ? "" : "s"));
 }
 
 // ---------------------------------------------------------------------------

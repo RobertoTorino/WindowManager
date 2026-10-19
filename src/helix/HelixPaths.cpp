@@ -1,6 +1,7 @@
 #include "HelixPaths.h"
 
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -37,21 +38,36 @@ std::optional<Package> builtPackage(const QString& data)
         QFile marker(d.absoluteFilePath() + '/' + kBuiltMarker);
         if (!marker.open(QIODevice::ReadOnly))
             continue;
-        const auto version = parseVersion(QString::fromUtf8(marker.readAll()));
+        // line 1: the version; an optional "driver=<fingerprint>" line: the helper script that passed the self-test
+        const QStringList lines = QString::fromUtf8(marker.readAll()).split('\n', Qt::SkipEmptyParts);
+        const auto version = lines.isEmpty() ? std::nullopt : parseVersion(lines.first());
         if (!version)
             continue;
+        QString driver;
+        for (const QString& line : lines) {
+            if (line.startsWith("driver="))
+                driver = line.mid(7).trimmed();
+        }
         if (!best || *version > best->version)
-            best = Package{d.absoluteFilePath(), *version};
+            best = Package{d.absoluteFilePath(), *version, driver};
     }
     return best;
 }
 
-bool markBuilt(const QString& packageDir, const Version& version)
+QString driverFingerprint(const QByteArray& script)
+{
+    return QString::fromLatin1(QCryptographicHash::hash(script, QCryptographicHash::Sha256).toHex().left(16));
+}
+
+bool markBuilt(const QString& packageDir, const Version& version, const QString& driver)
 {
     QFile marker(packageDir + '/' + kBuiltMarker);
     if (!marker.open(QIODevice::WriteOnly | QIODevice::Truncate))
         return false;
-    marker.write(version.toString().toUtf8());
+    QString text = version.toString() + '\n';
+    if (!driver.isEmpty())
+        text += "driver=" + driver + '\n';
+    marker.write(text.toUtf8());
     return true;
 }
 

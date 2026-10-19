@@ -1,5 +1,8 @@
 #pragma once
 
+#include <functional>
+
+#include <QObject>
 #include <QString>
 #include <QStringList>
 
@@ -43,5 +46,9 @@ GameScan scanGame(const QString& exePath);
 
 // True when the file at `path` is a HelixSR DLL.
 bool isHelixDll(const QString& path);
+
+// scanGame() on a worker thread, so a huge game folder never blocks the UI. `done` runs on the thread
+// of `context` (queued); it is skipped when `context` has been destroyed by then.
+void scanGameAsync(QObject* context, const QString& exePath, std::function<void(const GameScan&)> done);
 
 } // namespace Helix

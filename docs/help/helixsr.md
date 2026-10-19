@@ -62,11 +62,33 @@ HelixSR works in games that ship AMD FSR 3.1 (a file named `amd_fidelityfx_dx12.
 **Remove** puts the game's own DLL back (HelixSR keeps it as `*.original.dll` next to it). **Forget**
 only takes the game off the list. Close the game before installing or removing.
 
+## Settings for a game
+
+With a game that has HelixSR installed selected, the row under the list edits that game's `helixsr.ini`
+(next to HelixSR's DLL):
+
+| Setting | Values | Meaning |
+|---|---|---|
+| Sharpening | off, nvidia, rcas | An optional sharpening pass after upscaling. |
+| Strength | 0.00 to 1.00 | Used when sharpening is on. |
+| Wave size | auto, 64, 32 | Leave on auto unless the picture is broken. |
+
+**Save settings** writes the file (comments and other keys in it are kept; a missing file is created).
+Restart the game for the change to apply.
+
+## If installing is switched off
+
+After a build the app tries HelixSR's installer on a throw-away folder. If a newer HelixSR changed its
+installer so that WindowManager's helper no longer fits, the tab says so and **Install**, **Remove** and
+**Run** are disabled until WindowManager is updated. The built HelixSR is not lost: **Open folder** shows it,
+and running `helixsr-setup` there installs it into games by hand.
+
 ## Good to know
 
 - Games that only offer DLSS, XeSS or FSR 2 need HelixSR Scaler; this app does not install it.
 - Online games with anti-cheat may not accept a replaced DLL. Use it at your own risk.
-- HelixSR's settings live in `helixsr.ini` next to the game's DLL (`Sharpener`, `Sharpness`,
-  `WaveSize`); restart the game after changing them. Its log is `helixsr.log` in the same folder.
+- HelixSR's log is `helixsr.log` next to the game's DLL.
+- Looking through a game's folder happens in the background, so a big game never blocks the app; a list
+  entry reads "checking..." for a moment.
 - Everything the app does for HelixSR is written to the application log and the game's log;
   see [Logs and troubleshooting](logs-and-troubleshooting.md).

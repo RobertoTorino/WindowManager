@@ -14,8 +14,11 @@
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QRegularExpression>
+#include <QTimer>
 
 namespace {
+
+constexpr int kIncompatibleExit = 2;   // helixsr_driver.py: HelixSR's installer is not what it expects
 
 const QUrl kReleasesUrl("https://api.github.com/repos/lonewolf0622/HelixSR/releases?per_page=15");
 
@@ -66,6 +69,11 @@ HelixSetup::HelixSetup(QObject* parent)
     , m_net(new QNetworkAccessManager(this))
     , m_package(Helix::builtPackage(Helix::dataDir()))
 {
+    // A package whose installer helper was checked is trusted; a new package, a new helper script
+    // (this app was updated) or an older marker is checked once, in the background.
+    m_driverOk = m_package && m_package->driver == Helix::driverFingerprint(driverScript());
+    if (m_package && !m_driverOk)
+        QTimer::singleShot(0, this, &HelixSetup::verifyDriver);
 }
 
 std::optional<Helix::Version> HelixSetup::installedVersion() const
@@ -409,9 +417,13 @@ void HelixSetup::cleanUp()
 
     m_package = Helix::builtPackage(Helix::dataDir());
     m_buildDir.clear();
-    const QString text = QString("HelixSR %1 is ready.").arg(m_package ? m_package->version.toString() : "?");
-    setPhase(Phase::Idle, text);
-    emit buildFinished(true, text);
+    const QString ready = QString("HelixSR %1 is ready.").arg(m_package ? m_package->version.toString() : "?");
+
+    // Before anything is installed into a game, check that the installer still works with this release.
+    testDriver([this, ready](bool ok, const QString& problem) {
+        emit buildFinished(true, ok ? ready
+                                    : ready.chopped(1) + ", but installing into games is switched off: " + problem);
+    });
 }
 
 void HelixSetup::cancel()
@@ -462,35 +474,36 @@ void HelixSetup::fail(const QString& text)
 void HelixSetup::installIntoGame(const QString& exePath) { runGameJob(exePath, true); }
 void HelixSetup::removeFromGame(const QString& exePath)  { runGameJob(exePath, false); }
 
-void HelixSetup::runGameJob(const QString& exePath, bool install)
+QByteArray HelixSetup::driverScript()
 {
-    auto reject = [&](const QString& text) {
-        logWarn(text);
-        emit gameJobFinished(exePath, install, false, text);
-    };
-    if (busy())
-        return reject("Another HelixSR job is running.");
-    if (!ready())
-        return reject("HelixSR is not set up yet.");
-
-    const Helix::GameScan scan = Helix::scanGame(exePath);
-    if (scan.targets.isEmpty())
-        return reject("No AMD FSR 3.1 DLL (amd_fidelityfx_dx12.dll) was found in the game's folder.");
-
-    // The driver is kept next to the data; written fresh so it always matches this app.
     QFile resource(":/helix/driver.py");
+    return resource.open(QIODevice::ReadOnly) ? resource.readAll() : QByteArray();
+}
+
+QString HelixSetup::describeFailure(int exitCode, const QString& output)
+{
+    const QString line = lastLine(output);
+    if (exitCode == kIncompatibleExit) {
+        QString detail = line;
+        detail.remove("driver-incompatible: ");
+        return "This HelixSR version's installer is not what WindowManager expects (" + detail + "). "
+               "Update WindowManager, or install by hand with helixsr-setup in the HelixSR folder.";
+    }
+    return line.isEmpty() ? QString("The HelixSR installer failed (exit code %1).").arg(exitCode) : line;
+}
+
+void HelixSetup::runDriver(const QStringList& args, std::function<void(int, const QString&)> done)
+{
+    // The helper is written fresh next to the data so it always matches this app.
+    const QByteArray script = driverScript();
     const QString driver = Helix::dataDir() + "/helixsr_driver.py";
     QDir().mkpath(Helix::dataDir());
     QFile out(driver);
-    if (!resource.open(QIODevice::ReadOnly) || !out.open(QIODevice::WriteOnly | QIODevice::Truncate)
-        || out.write(resource.readAll()) < 0)
-        return reject("Could not write the HelixSR helper script.");
+    if (script.isEmpty() || !out.open(QIODevice::WriteOnly | QIODevice::Truncate) || out.write(script) != script.size()) {
+        done(-1, "Could not write the HelixSR helper script.");
+        return;
+    }
     out.close();
-
-    const QString verb = install ? "Installing HelixSR into" : "Removing HelixSR from";
-    const QString name = QFileInfo(exePath).dir().dirName();
-    setPhase(install ? Phase::Installing : Phase::Removing, QString("%1 %2...").arg(verb, name));
-    logInfo(QString("%1 %2 (%3)").arg(verb, exePath, scan.root));
 
     auto output = std::make_shared<QString>();
     auto* p = new QProcess(this);
@@ -505,27 +518,144 @@ void HelixSetup::runGameJob(const QString& exePath, bool install)
         for (const QString& line : text.split(QRegularExpression("[\r\n]+"), Qt::SkipEmptyParts))
             logInfo(line.trimmed());
     });
-    connect(p, &QProcess::finished, this, [this, p, output, exePath, install](int, QProcess::ExitStatus) {
+    connect(p, &QProcess::errorOccurred, this, [p, done](QProcess::ProcessError error) {
+        if (error != QProcess::FailedToStart)
+            return;   // a crash still ends in finished()
+        p->deleteLater();
+        done(-1, "Could not start Python: " + p->errorString());
+    });
+    connect(p, &QProcess::finished, this, [p, output, done](int code, QProcess::ExitStatus status) {
         *output += QString::fromUtf8(p->readAll());
         p->deleteLater();
+        done(status == QProcess::NormalExit ? code : -1, *output);
+    });
+    p->start(Helix::pythonExe(Helix::setupDataDir()), QStringList{driver, m_package->dir} + args);
+    p->closeWriteChannel();
+}
 
-        // The files decide, not the exit code.
-        const auto after = Helix::scanGame(exePath);
-        const bool installed = after.status == Helix::GameScan::Status::Installed;
-        const bool ok = install ? installed : !installed;
-        QString text;
-        if (ok) {
-            text = install ? "HelixSR is installed. Select AMD FSR in the game's graphics settings."
-                           : "HelixSR was removed and the game's own DLL is back.";
-        } else {
-            text = lastLine(*output);
-            if (text.isEmpty())
-                text = install ? "The install did not complete." : "HelixSR could not be removed.";
-        }
+void HelixSetup::runGameJob(const QString& exePath, bool install)
+{
+    auto reject = [&](const QString& text) {
+        logWarn(text);
+        emit gameJobFinished(exePath, install, false, text);
+    };
+    if (busy())
+        return reject("Another HelixSR job is running.");
+    if (!ready())
+        return reject("HelixSR is not set up yet.");
+    if (!m_driverOk)
+        return reject(m_driverProblem.isEmpty() ? QString("The HelixSR installer has not been checked yet.")
+                                                : m_driverProblem);
+
+    const QString verb = install ? "Installing HelixSR into" : "Removing HelixSR from";
+    setPhase(install ? Phase::Installing : Phase::Removing,
+             QString("%1 %2...").arg(verb, QFileInfo(exePath).dir().dirName()));   // busy from now on
+
+    auto finish = [this, exePath, install](bool ok, const QString& text) {
         setPhase(Phase::Idle, text);
         emit gameJobFinished(exePath, install, ok, text);
+    };
+
+    // Looking through the game's folder can take a while: not on the UI thread.
+    Helix::scanGameAsync(this, exePath, [this, exePath, install, verb, finish](const Helix::GameScan& scan) {
+        if (scan.targets.isEmpty()) {
+            const QString text = "No AMD FSR 3.1 DLL (amd_fidelityfx_dx12.dll) was found in the game's folder.";
+            logWarn(text);
+            finish(false, text);
+            return;
+        }
+        logInfo(QString("%1 %2 (%3)").arg(verb, exePath, scan.root));
+
+        runDriver({install ? "install" : "remove", scan.root},
+                  [this, exePath, install, finish](int code, const QString& output) {
+            // The files decide, not the exit code.
+            Helix::scanGameAsync(this, exePath, [install, code, output, finish](const Helix::GameScan& after) {
+                const bool installed = after.status == Helix::GameScan::Status::Installed;
+                const bool ok = install ? installed : !installed;
+                QString text;
+                if (ok) {
+                    text = install ? "HelixSR is installed. Select AMD FSR in the game's graphics settings."
+                                   : "HelixSR was removed and the game's own DLL is back.";
+                } else {
+                    text = code == 0 ? (install ? QString("The install did not complete.")
+                                                : QString("HelixSR could not be removed."))
+                                     : describeFailure(code, output);
+                }
+                finish(ok, text);
+            });
+        });
     });
-    p->start(Helix::pythonExe(Helix::setupDataDir()),
-             {driver, m_package->dir, install ? "install" : "remove", scan.root});
-    p->closeWriteChannel();
+}
+
+// ---------------------------------------------------------------------------
+// Self-test of the install helper
+// ---------------------------------------------------------------------------
+
+void HelixSetup::verifyDriver()
+{
+    if (busy() || !m_package)
+        return;
+    if (!QFile::exists(Helix::pythonExe(Helix::setupDataDir()))) {
+        m_driverOk = false;
+        m_driverProblem = "Python of the HelixSR setup is missing (" + Helix::setupDataDir() + "/python).";
+        setPhase(Phase::Idle, m_driverProblem);
+        return;
+    }
+    testDriver([this](bool ok, const QString& text) { emit driverChecked(ok, text); });
+}
+
+// Installs into and removes from a throw-away "game" with the built package, so a HelixSR release
+// whose installer changed is noticed right after the build, not in front of a real game.
+void HelixSetup::testDriver(std::function<void(bool, const QString&)> done)
+{
+    const QString root = Helix::dataDir() + "/selftest";
+    const QString bin = root + "/bin";
+    const QByteArray ownDll = "MZ self-test: the game's own FSR DLL";
+    QDir(root).removeRecursively();
+    QDir().mkpath(bin);
+    for (const auto& file : {std::pair<QString, QByteArray>{"Game.exe", "MZ self-test"},
+                             std::pair<QString, QByteArray>{Helix::kFsrGenericDll, ownDll}}) {
+        QFile f(bin + "/" + file.first);
+        if (!f.open(QIODevice::WriteOnly) || f.write(file.second) < 0) {
+            m_driverOk = false;
+            m_driverProblem = "Could not create the self-test folder in " + root;
+            QDir(root).removeRecursively();
+            setPhase(Phase::Idle, m_driverProblem);
+            done(false, m_driverProblem);
+            return;
+        }
+    }
+
+    setPhase(Phase::Testing, "Testing the installer against this HelixSR version...");
+    auto finish = [this, root, done](bool ok, const QString& text) {
+        QDir(root).removeRecursively();
+        m_driverOk = ok;
+        m_driverProblem = ok ? QString() : text;
+        if (ok && m_package) {
+            m_package->driver = Helix::driverFingerprint(driverScript());
+            Helix::markBuilt(m_package->dir, m_package->version, m_package->driver);
+        }
+        logInfo(ok ? "Installer self-test passed" : "Installer self-test FAILED: " + text);
+        setPhase(Phase::Idle, ok ? "The installer works with this HelixSR version." : text);
+        done(ok, text);
+    };
+
+    const QString exe = bin + "/Game.exe";
+    runDriver({"install", bin}, [this, exe, bin, ownDll, finish](int code, const QString& output) {
+        Helix::scanGameAsync(this, exe, [this, bin, ownDll, finish, code, output](const Helix::GameScan& installed) {
+            if (installed.status != Helix::GameScan::Status::Installed) {
+                finish(false, describeFailure(code, output));
+                return;
+            }
+            runDriver({"remove", bin}, [bin, ownDll, finish](int code2, const QString& output2) {
+                QFile restored(bin + "/" + Helix::kFsrGenericDll);
+                const bool back = restored.open(QIODevice::ReadOnly) && restored.readAll() == ownDll;
+                if (!back) {
+                    finish(false, describeFailure(code2, output2) + " (removing did not restore the game's DLL)");
+                    return;
+                }
+                finish(true, QString());
+            });
+        });
+    });
 }

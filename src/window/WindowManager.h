@@ -105,8 +105,11 @@ public:
     bool resetAll();
 
     // Process control
-    bool launchTarget();
+    bool launchTarget();   // refuses while the target exe is already running
     bool killTarget();
+    bool isTargetRunning() const;   // a process runs the target exe (not for .bat/.cmd)
+    static bool isExeRunning(const QString& exePath);   // .bat/.cmd: its remembered game exe
+    static QString realExePath(const QString& exePath); // the exe itself, or a script's game exe ("" if unknown)
 
     // Batch-launch child detection
     void snapshotProcesses();

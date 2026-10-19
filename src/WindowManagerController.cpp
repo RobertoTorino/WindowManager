@@ -308,7 +308,7 @@ void WindowManagerController::launchTarget()
         m_windowManager.snapshotProcesses();
 
     const bool ok = m_windowManager.launchTarget();
-    publishStatus(ok ? "Launched" : "Launch failed");
+    publishStatus(ok ? "Launched" : "Launch failed: " + m_windowManager.lastMessage());
 
     if (ok)
         armFitCheck();
@@ -433,6 +433,14 @@ void WindowManagerController::onFitTick()
         m_windowManager.scanWindowsForTarget();   // refresh the table
         m_windowManager.setActiveWindow(w.hwnd);  // and act on the window we measured
         syncStabilizerTarget();
+        // Nothing to correct with the dialog's default options: don't interrupt the user.
+        if (WindowManager::FitMeasurement m;
+            m_windowManager.measureFit(WindowManager::FitRequest{}, m) && !m.plan.needsChange()) {
+            Logger::instance().info("Fit check: window already fits the monitor, dialog skipped",
+                                    "WindowManagerController");
+            setStatus("Game window already fits the monitor exactly.");
+            break;
+        }
         Logger::instance().info("Fit check: game window settled, proposing fit", "WindowManagerController");
         setStatus("Game window ready: review the proposed fit.");
         emit fitProposed();

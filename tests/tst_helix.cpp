@@ -1,6 +1,7 @@
 #include <QtTest>
 
 #include "helix/HelixGame.h"
+#include "helix/HelixIni.h"
 #include "helix/HelixPaths.h"
 #include "helix/HelixSystem.h"
 #include "helix/SystemProbe.h"
@@ -379,6 +380,118 @@ private slots:
     void noNative16BitIsOnlyExperimental()
     {
         QCOMPARE(evaluate(pcWith({gpu("AMD Radeon RX 5500 XT", 0x1002, 66, false, 32, 64)})).level, Level::Experimental);
+    }
+
+    void iniDefaultsWhenEmptyOrInvalid()
+    {
+        QCOMPARE(parseIni(""), IniSettings());
+        const IniSettings s = parseIni("[Sharpening]\nSharpener = banana\nSharpness = lots\n[Compatibility]\nWaveSize = 48\n");
+        QCOMPARE(s, IniSettings());
+    }
+
+    void iniParsesValuesCaseAndSpacing()
+    {
+        const IniSettings s = parseIni("; comment\r\n[sharpening]\r\n  SHARPENER=RCAS\r\nSharpness =   0.35  \r\n"
+                                       "[Compatibility]\r\nwavesize = 64\r\n");
+        QCOMPARE(s.sharpener, QString("rcas"));
+        QCOMPARE(s.sharpness, 0.35);
+        QCOMPARE(s.waveSize, QString("64"));
+        // values are clamped, and a key in the wrong section is ignored
+        QCOMPARE(parseIni("[Sharpening]\nSharpness = 7\n").sharpness, 1.0);
+        QCOMPARE(parseIni("[Compatibility]\nSharpener = rcas\n").sharpener, QString("off"));
+    }
+
+    void iniApplyKeepsCommentsOrderAndLineEndings()
+    {
+        const QString original = QString("; HelixSR settings.\r\n\r\n[Sharpening]\r\n; off, nvidia or rcas\r\nSharpener = off\r\n"
+                                         "; 0.0 to 1.0\r\nSharpness = 0.1\r\n\r\n[Compatibility]\r\n; auto, 64 or 32\r\n"
+                                         "WaveSize = auto\r\n");
+        IniSettings s;
+        s.sharpener = "nvidia";
+        s.sharpness = 0.5;
+        s.waveSize = "32";
+        const QString changed = applyIni(original, s);
+        QCOMPARE(changed, QString("; HelixSR settings.\r\n\r\n[Sharpening]\r\n; off, nvidia or rcas\r\nSharpener = nvidia\r\n"
+                                  "; 0.0 to 1.0\r\nSharpness = 0.5\r\n\r\n[Compatibility]\r\n; auto, 64 or 32\r\n"
+                                  "WaveSize = 32\r\n"));
+        QCOMPARE(parseIni(changed), s);
+        // applying the same settings again changes nothing
+        QCOMPARE(applyIni(changed, s), changed);
+    }
+
+    void iniApplyKeepsUnixEndingsAndUnknownKeys()
+    {
+        const QString changed = applyIni("[Sharpening]\nSharpener = off\nSomethingNew = 1\n", IniSettings{"rcas", 0.2, "auto"});
+        QVERIFY(!changed.contains('\r'));
+        QVERIFY(changed.contains("SomethingNew = 1\n"));
+        QCOMPARE(parseIni(changed).sharpener, QString("rcas"));
+    }
+
+    void iniApplyAddsMissingKeysAndSections()
+    {
+        // key missing inside an existing section: added below that section's last line, before the next section
+        const QString a = applyIni("[Sharpening]\nSharpener = off\n\n[Compatibility]\nWaveSize = auto\n",
+                                   IniSettings{"off", 0.3, "auto"});
+        QCOMPARE(a, QString("[Sharpening]\nSharpener = off\nSharpness = 0.3\n\n[Compatibility]\nWaveSize = auto\n"));
+
+        // whole file new
+        const QString fresh = applyIni("", IniSettings{"nvidia", 0.1, "64"});
+        QVERIFY(fresh.contains("\r\n"));
+        QCOMPARE(parseIni(fresh), (IniSettings{"nvidia", 0.1, "64"}));
+        QVERIFY(fresh.contains("[Sharpening]") && fresh.contains("[Compatibility]"));
+    }
+
+    void iniClampsOnWrite()
+    {
+        QVERIFY(applyIni("", IniSettings{"rcas", 5.0, "auto"}).contains("Sharpness = 1"));
+        QVERIFY(applyIni("", IniSettings{"rcas", -2.0, "auto"}).contains("Sharpness = 0"));
+    }
+
+    void builtMarkerCarriesTheDriverFingerprint()
+    {
+        QTemporaryDir dir;
+        QDir().mkpath(dir.filePath("HelixSR-1.9.3"));
+        QVERIFY(markBuilt(dir.filePath("HelixSR-1.9.3"), *parseVersion("1.9.3")));
+        QVERIFY(builtPackage(dir.path())->driver.isEmpty());   // nothing checked yet (also how older markers read)
+
+        const QString fp = driverFingerprint("script v1");
+        QCOMPARE(fp.size(), 16);
+        QVERIFY(fp != driverFingerprint("script v2"));
+        QCOMPARE(fp, driverFingerprint("script v1"));
+        QVERIFY(markBuilt(dir.filePath("HelixSR-1.9.3"), *parseVersion("1.9.3"), fp));
+        const auto pkg = builtPackage(dir.path());
+        QCOMPARE(pkg->driver, fp);
+        QCOMPARE(pkg->version.toString(), QString("1.9.3"));
+    }
+
+    void scanGameAsyncDeliversTheSameResultOnTheCallersThread()
+    {
+        QTemporaryDir dir;
+        touch(dir.filePath("Game/game.exe"));
+        touch(dir.filePath("Game/amd_fidelityfx_dx12.dll"), "MZ own");
+        QObject context;
+        std::optional<GameScan> got;
+        QThread* callbackThread = nullptr;
+        scanGameAsync(&context, dir.filePath("Game/game.exe"), [&](const GameScan& scan) {
+            got = scan;
+            callbackThread = QThread::currentThread();
+        });
+        QTRY_VERIFY(got.has_value());
+        QCOMPARE(got->status, GameScan::Status::Ready);
+        QCOMPARE(callbackThread, QThread::currentThread());
+    }
+
+    void scanGameAsyncSkipsTheCallbackWhenTheContextIsGone()
+    {
+        QTemporaryDir dir;
+        touch(dir.filePath("Game/game.exe"));
+        bool called = false;
+        {
+            QObject context;
+            scanGameAsync(&context, dir.filePath("Game/game.exe"), [&](const GameScan&) { called = true; });
+        }   // destroyed before the result is delivered
+        QTest::qWait(300);
+        QVERIFY(!called);
     }
 
     // Not an assertion about the hardware: it prints what this PC reports, for whoever runs the tests.

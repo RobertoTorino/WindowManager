@@ -925,6 +925,13 @@ bool WindowManager::pollForBatchChild()
                     " (PID: " + std::to_string(pid) + ")",
                     "WindowManager");
 
+                // Remember which exe this script starts, so "is it running" works later
+                if (!fullPath.isEmpty())
+                    if (auto game = AppConfig::instance().gameByPath(m_targetExePath)) {
+                        game->childExePath = fullPath;
+                        AppConfig::instance().saveGame(*game);
+                    }
+
                 // Switch the tracked target to the real game exe
                 m_targetExePath = fullPath.isEmpty() ? name : fullPath;
                 AppConfig::instance().setCurrentExePath(m_targetExePath);
@@ -954,14 +961,23 @@ bool WindowManager::launchTarget()
         Logger::instance().warn("launchTarget: no launch target selected", "WindowManager");
         return false;
     }
-    Logger::instance().info(
-        "Launching: " + m_targetExePath.toStdString(), "WindowManager");
     const QFileInfo targetInfo(m_targetExePath);
     const QString workingDir = targetInfo.absolutePath();
 
     const bool isBatch =
         targetInfo.suffix().compare("bat", Qt::CaseInsensitive) == 0 ||
         targetInfo.suffix().compare("cmd", Qt::CaseInsensitive) == 0;
+
+    // Fail-safe: never start a second copy of a game that is already running.
+    if (isTargetRunning()) {
+        m_lastMessage = "Already running: close the game first, then launch it again.";
+        Logger::instance().warn(
+            "Launch refused: already running: " + m_targetExePath.toStdString(), "WindowManager");
+        return false;
+    }
+
+    Logger::instance().info(
+        "Launching: " + m_targetExePath.toStdString(), "WindowManager");
 
     qint64 pid = 0;
     bool ok = false;
@@ -1003,6 +1019,48 @@ int WindowManager::activeWindowMonitorIndex() const
     return MonitorHelper::getMonitorIndexFromWindow(reinterpret_cast<void*>(m_activeWindow));
 }
 
+bool WindowManager::isTargetRunning() const
+{
+    return isExeRunning(m_targetExePath);
+}
+
+QString WindowManager::realExePath(const QString& exePath)
+{
+    const QString suffix = QFileInfo(exePath).suffix();
+    if (suffix.compare("bat", Qt::CaseInsensitive) != 0 && suffix.compare("cmd", Qt::CaseInsensitive) != 0)
+        return exePath;
+    const auto game = AppConfig::instance().gameByPath(exePath);
+    return game ? game->childExePath : QString();   // empty: not known yet
+}
+
+bool WindowManager::isExeRunning(const QString& exePath)
+{
+    const QString real = realExePath(exePath);
+    if (real.trimmed().isEmpty())
+        return false;
+    const QString wanted = QDir::toNativeSeparators(QFileInfo(real).absoluteFilePath()).toLower();
+
+    const HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot == INVALID_HANDLE_VALUE)
+        return false;
+    bool running = false;
+    PROCESSENTRY32W entry{};
+    entry.dwSize = sizeof(entry);
+    if (Process32FirstW(snapshot, &entry)) {
+        do {
+            if (entry.th32ProcessID == GetCurrentProcessId())
+                continue;
+            const QString path = processImagePath(entry.th32ProcessID);
+            if (!path.isEmpty() && QDir::toNativeSeparators(path).toLower() == wanted) {
+                running = true;
+                break;
+            }
+        } while (Process32NextW(snapshot, &entry));
+    }
+    CloseHandle(snapshot);
+    return running;
+}
+
 bool WindowManager::killTarget()
 {
     Logger::instance().info("killTarget called", "WindowManager");
@@ -1030,8 +1088,9 @@ bool WindowManager::killTarget()
 
     KillPlanner::Request req;
     req.rootPids = m_sessionPids;
-    req.targetPathLower = QDir::toNativeSeparators(m_targetExePath).toLower().toStdString();
-    req.targetExeLower = QFileInfo(m_targetExePath).fileName().toLower().toStdString();
+    const QString realTarget = realExePath(m_targetExePath);   // a script's game exe, not the script
+    req.targetPathLower = QDir::toNativeSeparators(realTarget).toLower().toStdString();
+    req.targetExeLower = QFileInfo(realTarget).fileName().toLower().toStdString();
     req.launchTime = m_launchTime;
     req.ignoreExes = toLowerSet(ignoreListInternal());
     req.loaderExes = toLowerSet(teknoLoaderListInternal());

@@ -19,6 +19,7 @@ src/
   helix/HelixRelease.*          Pure logic: versions, GitHub release parsing, checksums, update decision
   helix/HelixGame.*             Pure logic: where a game's FSR 3.1 DLLs are, installed / replaced state
   helix/HelixPaths.*            Pure logic: on-disk layout, built-package marker, post-build leftovers
+  helix/HelixIni.*              Pure logic: read / edit helixsr.ini (Sharpener, Sharpness, WaveSize), keeping the rest of the file
   helix/HelixSystem.*           Pure logic: GPU family from the name / SIMD width, can this PC run HelixSR (Verdict)
   helix/SystemProbe.*           DXGI + Direct3D 12 probe of the adapters, free disk space, tar / PowerShell
   helix/HelixSetup.*            Download, verify, unpack, build (HelixSR's own setup), clean up; per-game install
@@ -177,6 +178,19 @@ Spin boxes are styled in the same sheet; their arrows are the SVGs in `resources
   exe is in bin / x64 / Win64 / Binaries). "Installed" means the DLL contains `HelixSR x.y.z`;
   "replaced" means HelixSR's record and backup exist but the DLL is the game's again.
 - Games on the HelixSR list have `helixConfirmed` set in `windowmanager.json`.
+- **Scans are asynchronous.** `Helix::scanGameAsync(context, exe, done)` runs `scanGame` on the global thread
+  pool and calls `done` on the context's thread (dropped if the context is gone). `HelixPanel::rebuildGames`
+  shows the list at once ("checking...") and fills each row as its scan returns; a generation counter drops the
+  results of an older list. `HelixSetup::runGameJob` marks itself busy first, so nothing can overlap.
+- **Installer self-test.** `HelixSetup::testDriver` builds a throw-away game under `helixsr/selftest`, runs the
+  helper to install and remove, and checks the DLL changed and was restored byte for byte. On success the
+  fingerprint of `helixsr_driver.py` (`Helix::driverFingerprint`) is stored in the package's
+  `.windowmanager-built` marker, so it is not repeated until the helper script or the package changes. The
+  helper exits with code 2 (`driver-incompatible: ...`) when HelixSR's functions no longer match
+  (ImportError / AttributeError / TypeError / NameError); a failed test sets `driverOk() == false`, which
+  `canInstall()` and the panel's buttons respect.
+- `HelixIni::applyIni` edits the existing text line by line (section and key lookup is case-insensitive), so
+  comments, unknown keys and the file's line endings survive.
 
 ## Process termination
 
@@ -197,7 +211,7 @@ unit-tested directly.
 | `tst_fit` | fit maths (framed, borderless, negative-origin monitor, overscan, applied plan is stable) and the settle trigger (fires once, restarts on move/new window, ignores unusable windows, times out) |
 | `tst_supersample` | letterbox (side bars, top/bottom bars, never exceeds the area), render size per factor and shape, parking position (behind the overlay vs beyond the desktop, with a monitor above/next to it), mouse mapping (pixel centres, black bars ignored, clamping while dragging, never past the last pixel) |
 | `tst_appconfig` | save/load round-trip, clearing profiles, corrupt/missing files, legacy keys, the HelixSR flag |
-| `tst_helix` | version parsing/ordering, release choice (no prereleases, the right zip), checksums, update decision, DLL version, game root, FSR DLL detection and installed / replaced state, built-package marker, post-build leftovers, GPU family and the can-this-PC-run-it verdict (a live probe of the test machine is printed too) |
+| `tst_helix` | version parsing/ordering, release choice (no prereleases, the right zip), checksums, update decision, DLL version, game root, FSR DLL detection and installed / replaced state, async scan delivery, built-package marker and driver fingerprint, post-build leftovers, helixsr.ini parsing and in-place editing, GPU family and the can-this-PC-run-it verdict (a live probe of the test machine is printed too) |
 
 The UI and the Win32 window code are not unit-tested; they are checked by running the
 app. New logic that can be written without Win32 or widgets (like `KillPlanner`) should

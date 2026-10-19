@@ -79,6 +79,7 @@ bool AppConfig::load()
         game.savedName       = obj["SavedName"].toString();
         game.snapshotDir     = obj["SnapshotDir"].toString();
         game.helixConfirmed  = obj["HelixConfirmed"].toBool(false);
+        game.childExePath    = obj["ChildExePath"].toString();
         m_games.insert(path, game);
     }
 
@@ -117,6 +118,7 @@ bool AppConfig::save()
         obj["SavedName"]       = it.value().savedName;
         obj["SnapshotDir"]     = it.value().snapshotDir;
         obj["HelixConfirmed"]  = it.value().helixConfirmed;
+        obj["ChildExePath"]    = it.value().childExePath;
         games.append(obj);
     }
 

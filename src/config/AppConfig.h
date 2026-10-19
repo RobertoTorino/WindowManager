@@ -29,6 +29,7 @@ public:
         QString savedName;
         QString snapshotDir;
         bool    helixConfirmed{false};   // checked for an FSR 3.1 DLL: listed on the HelixSR tab
+        QString childExePath;            // .bat/.cmd games: the game exe the script started last time
     };
 
     struct WindowProfile

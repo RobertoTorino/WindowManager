@@ -6,7 +6,7 @@
 |---|---|
 | Dropdown | Your saved games. Type to filter. Picking one makes it the target. |
 | **Add game...** | Register an `.exe`, `.bat` or `.cmd` and name it. Adding an existing path lets you rename it. |
-| **Start** | Launch the selected game. |
+| **Start** | Launch the selected game. If a game is already running, asks whether to close it first (a game is never started twice). |
 | **Restart** | Terminate it, then launch it again. |
 | **Kill** | Terminate it. |
 

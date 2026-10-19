@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 # Single source of truth for version — workflows read this with a regex
-set(APP_VERSION "0.1.5")
+set(APP_VERSION "0.1.6")
 
 project(WindowManager VERSION ${APP_VERSION} LANGUAGES CXX)
 
@@ -223,5 +223,6 @@ if(WINDOWMANAGER_BUILD_TESTS)
         target_link_libraries(tst_helix PRIVATE d3d12 dxgi)   # SystemProbe asks the GPU driver
     endif()
 endif()
+
 
 

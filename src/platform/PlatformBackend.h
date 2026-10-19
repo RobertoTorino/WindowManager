@@ -111,10 +111,14 @@ public:
     virtual bool     terminateProcess(uint32_t pid) = 0;
     // Starts the game (a script is run through its interpreter); pid is the new process.
     virtual bool     startProcess(const QString& path, const QString& workingDir, qint64* pid) = 0;
+    // Hands a URL (steam://rungameid/...) to the program registered for it.
+    virtual bool     openUrl(const QString& url);
 
     // ----- Capture ---------------------------------------------------------
     // Pixels currently on screen inside rect (null image on failure).
     virtual QImage captureScreen(const Fit::Rect& rect) const = 0;
+    // The window as shown; by default its rectangle on the screen (null image on failure).
+    virtual QImage captureWindow(quintptr window) const;
 };
 
 // The backend for this platform (or the one a test installed).

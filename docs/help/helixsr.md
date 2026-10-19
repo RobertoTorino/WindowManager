@@ -40,27 +40,27 @@ If HelixSR is set up, the app checks GitHub for a newer release when it starts (
 *HelixSR (update)* and the button reads *Update to x.y.z*. The update downloads and builds the new
 version, removes the old one, and offers to update the games that still have the older DLL.
 
-## Games with HelixSR
+## Games
 
 HelixSR works in games that ship AMD FSR 3.1 (a file named `amd_fidelityfx_dx12.dll` or
 `amd_fidelityfx_upscaler_dx12.dll`).
 
-1. Add the game with **Add game...** as usual and select it in the game bar.
-2. On the HelixSR tab press **Check selected game**. If it has an FSR 3.1 DLL it joins the list;
-   if not, you are told why.
-3. Pick it in the list and press **Install**, or just **Run with HelixSR** (double-click does the
+1. The list shows every saved game (Steam games are added by themselves). The app looks through each
+   game's folder in the background. Games with an FSR 3.1 DLL come first. Games without one are greyed
+   out and cannot be selected.
+2. Pick a game in the list and press **Install**, or just **Run with HelixSR** (double-click does the
    same): it installs when needed and then starts the game like **Start** does.
-4. In the game's graphics settings choose **AMD FSR** as the upscaler.
+3. In the game's graphics settings choose **AMD FSR** as the upscaler.
 
 | Status in the list | Meaning |
 |---|---|
 | not installed | The game has an FSR 3.1 DLL; HelixSR is not in it yet. |
 | HelixSR x.y.z installed | The game's FSR DLL is HelixSR's. "is available" means a newer build can be installed. |
 | the game put its own DLL back | A game update or "verify files" restored the original. Install again (Run does it for you). |
-| no AMD FSR 3.1 DLL found | The game moved or no longer has the DLL. |
+| no AMD FSR 3.1 DLL: HelixSR cannot be used | Greyed out. The game has no FSR 3.1 (it may only offer DLSS, XeSS or an older FSR). |
 
-**Remove** puts the game's own DLL back (HelixSR keeps it as `*.original.dll` next to it). **Forget**
-only takes the game off the list. Close the game before installing or removing.
+**Remove** puts the game's own DLL back (HelixSR keeps it as `*.original.dll` next to it). Close the game
+before installing or removing.
 
 ## Settings for a game
 

@@ -24,6 +24,7 @@
 #include <QCheckBox>
 #include <QCloseEvent>
 #include <QCoreApplication>
+#include <QDesktopServices>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QHBoxLayout>
@@ -40,6 +41,7 @@
 #include <QTabBar>
 #include <QTabWidget>
 #include <QTimer>
+#include <QUrl>
 #include <QVBoxLayout>
 
 #ifdef Q_OS_WIN
@@ -125,6 +127,7 @@ MainWindow::MainWindow(QWidget *parent)
     refresh();
     if (!m_controller->targetExecutable().isEmpty())
         m_controller->scanWindows();
+    findSteamGames(true);
 }
 
 MainWindow::~MainWindow()
@@ -180,13 +183,24 @@ void MainWindow::buildUi()
     // QTabWidget sizes itself to its tallest page, which leaves blank space under
     // shorter ones. Cap its height to tab bar + current page instead; the window
     // table (the only stretchy row) takes whatever is left.
-    auto fitCurrentPage = [this](int current) {
+    auto fitCurrentPage = [this, layout](int current) {
         const QWidget *page = m_tabs->widget(current);
         if (!page)
             return;
         constexpr int kPaneFrame = 8;
         m_tabs->setMaximumHeight(m_tabs->tabBar()->sizeHint().height()
                                  + page->sizeHint().height() + kPaneFrame);
+
+        // A page can grow while hidden (HelixSR fills in its texts and game list later), and with
+        // large fonts it may then need more room than the window has. Grow the window rather than
+        // squeeze the page, which makes its widgets overlap.
+        layout->invalidate();
+        QTimer::singleShot(0, this, [this]() {   // once the layout has been recalculated
+            const int needed = std::max(620, minimumSizeHint().height());
+            setMinimumHeight(needed);
+            if (height() < needed)
+                resize(width(), needed);
+        });
     };
     connect(m_tabs, &QTabWidget::currentChanged, this, fitCurrentPage);
     fitCurrentPage(m_tabs->currentIndex());
@@ -244,8 +258,13 @@ void MainWindow::buildMenus()
 {
     auto *file = menuBar()->addMenu("&File");
     file->addAction("&Add game...", QKeySequence::Open, this, &MainWindow::addGame);
+    file->addAction("Find &Steam games", this, [this]() { findSteamGames(false); });
     file->addAction("Open &config file", this, []() {
+#ifdef Q_OS_WIN
         QProcess::startDetached("notepad.exe", {AppConfig::instance().configPath()});
+#else
+        QDesktopServices::openUrl(QUrl::fromLocalFile(AppConfig::instance().configPath()));
+#endif
     });
     file->addAction("View &logs...", QKeySequence(Qt::CTRL | Qt::Key_L), this, [this]() {
         LogViewerDialog(this).exec();
@@ -323,7 +342,11 @@ void MainWindow::addGame()
 {
     const QString path = QFileDialog::getOpenFileName(
         this, "Select Target Executable or Batch File", QString(),
+#ifdef Q_OS_WIN
         "Launch Targets (*.exe *.bat *.cmd)");
+#else
+        "Launch Targets (*.exe *.sh *.x86_64);;All Files (*)");
+#endif
     if (path.isEmpty())
         return;
 
@@ -339,6 +362,35 @@ void MainWindow::addGame()
     AppConfig::instance().saveGame(GameRegistry::buildEntry(normalized, *name));
     m_controller->setTargetExecutable(normalized);
     refreshGames();
+}
+
+// Adds the games installed through Steam to the game list (and drops uninstalled ones). Runs in the
+// background; `quiet` (at start-up) only reports when something changed.
+void MainWindow::findSteamGames(bool quiet)
+{
+    if (!quiet)
+        m_detailLabel->setText("Looking for Steam games...");
+    SteamLibrary::findGamesAsync(this, [this, quiet](const SteamLibrary::Scan &scan) {
+        const auto sync = GameRegistry::syncSteamGames(scan);
+        Logger::instance().info("Steam games: " + std::to_string(scan.games.size()) + " installed, "
+                                    + std::to_string(sync.added) + " added, " + std::to_string(sync.removed)
+                                    + " removed",
+                                "MainWindow");
+        if (sync.added > 0 || sync.removed > 0) {
+            refreshGames();
+            m_helix->gamesChanged();
+        }
+        if (quiet && sync.added == 0 && sync.removed == 0)
+            return;
+        QString text = scan.libraries.isEmpty()
+                           ? QString("No Steam library found.")
+                           : QString("Steam games: %1 installed").arg(scan.games.size());
+        if (sync.added > 0)
+            text += QString(", %1 added").arg(sync.added);
+        if (sync.removed > 0)
+            text += QString(", %1 uninstalled game(s) removed").arg(sync.removed);
+        m_detailLabel->setText(text + '.');
+    });
 }
 
 void MainWindow::startSelectedGame()

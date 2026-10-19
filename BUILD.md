@@ -113,8 +113,24 @@ Build directory for each preset: `build\<preset-name>\`
 
 ## Linux (work in progress)
 
-The app builds on Linux and controls X11 / XWayland windows (see `docs/ARCHITECTURE.md`).
-Tested on Ubuntu 26.04 under WSL2 with WSLg:
+The app builds on Linux and controls X11 / XWayland windows (see `docs/ARCHITECTURE.md` and
+`docs/LINUX_PORT.md`). Tested on Bazzite (KDE Plasma Wayland) with Proton games, and on Ubuntu 26.04
+under WSL2 with WSLg.
+
+**Bazzite / Fedora Atomic.** The system is read-only, so build in a distrobox:
+
+```
+distrobox create -n wm-dev -i registry.fedoraproject.org/fedora-toolbox:44
+distrobox enter wm-dev
+sudo dnf install -y cmake ninja-build clang gcc-c++ qt6-qtbase-devel qt6-qtbase-private-devel \
+    qt6-qttools-devel libX11-devel libXrandr-devel libXext-devel libxcb-devel xterm git
+```
+
+Then build and test as below and run `./build/linux/WindowManager` from the container. Steam games
+are started on the host through `distrobox-host-exec xdg-open steam://...`. With little RAM, run
+`scripts/free-memory.sh` (`--close` closes browsers and IDEs) before starting a game.
+
+**Ubuntu:**
 
 ```
 sudo apt install build-essential cmake ninja-build pkg-config qt6-base-dev libxcb1-dev x11-utils xterm

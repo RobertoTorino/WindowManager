@@ -5,7 +5,35 @@ Notable changes to WindowManager. The version number lives in `APP_VERSION` in `
 
 ## Unreleased
 
+### Added
+- **Steam games are found by themselves.** At start-up (and with *File > Find Steam games*) the app reads
+  Steam's library files and adds every installed game to the game list, with Steam's name and the game's
+  main executable. Proton, the Steam Linux Runtime and the redistributables are left out. An uninstalled
+  game is removed (its saved position is kept); names you gave are kept. Works on Windows and Linux.
+- **Steam games start through Steam** (`steam://rungameid/<AppID>`), so Proton, DRM and the overlay work.
+- `scripts/free-memory.sh` (Linux): shows what uses memory and closes browsers / IDEs before testing a game.
+
 ### Changed
+- **The HelixSR tab lists every game.** Games without an AMD FSR 3.1 DLL are greyed out and cannot be
+  selected; the others come first. *Check selected game* and *Forget* are gone, as the list now checks
+  every game by itself.
+- With no game selected, the game dropdown is empty instead of showing the first game (which looked
+  selected but was not the target).
+- *File > Open config file* opens the file in the default editor on Linux (it ran `notepad.exe`).
+- The *Add game...* dialog on Linux also offers `*.sh`, `*.x86_64` and all files.
+- Snapshots go through `PlatformBackend::captureWindow` (on Windows the same screen capture as before).
+
+### Fixed
+- *Capture* no longer says "Snapshot saved" when no shot was written; it reports the failure.
+- The HelixSR tab's buttons no longer overlap its game list when the window is short (larger fonts or
+  display scaling): the window grows to fit the tab.
+- Launching a Steam game logs the `steam://` URL it opens.
+- Linux: Proton games are found again. Their image path is on drive S: (the Steam folder), which is now
+  translated through the Wine prefix; `/var/home` and `/home` paths compare equal on Fedora Atomic systems.
+- Linux: *True Borderless FS* uses the window manager's full-screen state, as KWin will not resize Wine's
+  fixed-size windows or drop their title bar; *Windowed* leaves it.
+- Linux: *Focus* works under KWin (its focus-stealing prevention ignored the request).
+- Linux: snapshots capture the game window; under Wayland the screen itself cannot be read.
 - **OS access moved behind `PlatformBackend`** (`src/platform/`), the first step of a Linux port. Window
   listing, moving, styles, monitors, processes and screen capture now go through one interface;
   `Win32Backend` is the only implementation, and behaviour on Windows is unchanged. The downscaled

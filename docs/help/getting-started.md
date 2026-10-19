@@ -6,8 +6,9 @@ downscaled picture and screenshots.
 
 ## The first five minutes
 
-1. **Add a game.** Click **Add game...** (File > Add game..., Ctrl+O) and pick an `.exe`,
-   `.bat` or `.cmd`. Give it a short name. It is saved in the dropdown for next time.
+1. **Add a game.** Games installed through Steam are already in the dropdown. For anything else
+   click **Add game...** (File > Add game..., Ctrl+O) and pick an `.exe`, `.bat` or `.cmd`. Give it a
+   short name. It is saved in the dropdown for next time.
 2. **Start it.** Click **Start**. For a batch file the app watches for the real game process
    the batch file spawns and switches to it by itself. Already running? Pick the game and
    press **Scan**.

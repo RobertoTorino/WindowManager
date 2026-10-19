@@ -58,6 +58,9 @@ set(WINDOW_MANAGER_SOURCES
     # Steam game identification by AppID (pure, unit-tested)
     src/window/SteamMatch.h
     src/window/SteamMatch.cpp
+    # Games installed through Steam: library and manifest files, main executable (pure parts unit-tested)
+    src/window/SteamLibrary.h
+    src/window/SteamLibrary.cpp
     # Downscaled-view geometry (pure, unit-tested)
     src/window/Supersample.h
     src/window/Supersample.cpp
@@ -199,10 +202,15 @@ if(WINDOWMANAGER_BUILD_TESTS)
     # WindowManager and MonitorHelper against a fake PlatformBackend (no real windows)
     add_wm_test(tst_windowmanager
                 src/window/WindowManager.cpp src/window/MonitorHelper.cpp
-                src/window/KillPlanner.cpp src/window/FitCalculator.cpp
+                src/window/KillPlanner.cpp src/window/FitCalculator.cpp src/window/SteamMatch.cpp
                 src/platform/PlatformBackend.cpp
                 src/config/AppConfig.cpp src/core/Logger.cpp)
     target_link_libraries(tst_windowmanager PRIVATE Qt${QT_VERSION_MAJOR}::Gui)
+    # Steam library parsing, a fake Steam folder, and the sync into the saved games
+    add_wm_test(tst_steamlibrary
+                src/window/SteamLibrary.cpp src/ui/GameRegistry.cpp
+                src/config/AppConfig.cpp src/core/Utilities.cpp src/core/Logger.cpp)
+    target_link_libraries(tst_steamlibrary PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
     if(UNIX AND NOT APPLE)
         # The real X11 backend against an xterm (skips itself without a display)
         add_wm_test(tst_x11backend src/platform/x11/X11Backend.cpp src/platform/PlatformBackend.cpp)

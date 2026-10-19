@@ -63,11 +63,9 @@ void GameBar::setGames(const QList<QPair<QString, QString>>& games, const QStrin
     }
 
     const int idx = currentPath.isEmpty() ? -1 : m_combo->findData(currentPath);
-    if (idx >= 0)
-        m_combo->setCurrentIndex(idx);
-    else if (m_combo->count() > 0)
-        m_combo->setCurrentIndex(0);
-    else
+    // No target yet: show none rather than the first game, which would look selected but is not.
+    m_combo->setCurrentIndex(idx);
+    if (idx < 0)
         m_combo->lineEdit()->clear();
 
     const bool any = m_combo->count() > 0;

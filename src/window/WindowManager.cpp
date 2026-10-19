@@ -4,6 +4,7 @@
 #include "../core/Logger.h"
 #include "KillPlanner.h"
 #include "MonitorHelper.h"
+#include "SteamMatch.h"
 #include "../platform/PlatformBackend.h"
 
 #include <QDir>
@@ -797,11 +798,17 @@ bool WindowManager::launchTarget()
         return false;
     }
 
-    Logger::instance().info(
-        "Launching: " + m_targetExePath.toStdString(), "WindowManager");
-
+    // A Steam game starts through Steam (Proton, DRM, overlay), so there is no pid of our own.
     qint64 pid = 0;
-    const bool ok = platform().startProcess(m_targetExePath, workingDir, &pid);
+    const auto game = AppConfig::instance().gameByPath(m_targetExePath);
+    const QString steamUrl = game && game->steamAppId != 0
+                                 ? QString::fromStdString(SteamMatch::launchUrl(game->steamAppId))
+                                 : QString();
+    Logger::instance().info(
+        "Launching: " + (steamUrl.isEmpty() ? m_targetExePath : steamUrl + " (" + m_targetExePath + ")").toStdString(),
+        "WindowManager");
+    const bool ok = steamUrl.isEmpty() ? platform().startProcess(m_targetExePath, workingDir, &pid)
+                                       : platform().openUrl(steamUrl);
 
     if (ok) {
         m_sessionPids.clear();

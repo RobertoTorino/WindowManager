@@ -20,6 +20,7 @@ private slots:
         g.savedName = "MY_GAME";
         g.id = "GAME_MY_GAME";
         g.helixConfirmed = true;
+        g.steamAppId = 1593500;
         cfg.saveGame(g);
         cfg.setCurrentExePath(g.applicationPath);
         cfg.saveWindowProfile(g.applicationPath, 10, 20, 1280, 720);
@@ -35,6 +36,7 @@ private slots:
         QCOMPARE(game->savedName, QString("MY_GAME"));
         QCOMPARE(game->id, QString("GAME_MY_GAME"));
         QVERIFY(game->helixConfirmed);
+        QCOMPARE(game->steamAppId, 1593500u);
 
         const auto prof = cfg.getWindowProfile(g.applicationPath);
         QVERIFY(prof.has_value());

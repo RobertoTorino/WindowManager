@@ -10,8 +10,10 @@
 #include <QProcess>
 #include <QRegularExpression>
 #include <QScreen>
+#include <QStandardPaths>
 
 #include <signal.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -40,6 +42,7 @@ constexpr uint32_t kMotifDecorAll = 1;
 constexpr uint32_t kMotifHintsDecorations = 2;
 constexpr uint32_t kStaticGravity = 10;
 constexpr uint32_t kSourceApplication = 1;
+constexpr uint32_t kSourcePager = 2;   // a tool acting for the user: KWin's focus-stealing prevention allows it
 
 enum StateAction : uint32_t { Remove = 0, Add = 1, Toggle = 2 };
 
@@ -160,17 +163,65 @@ bool isWineLoader(const QString& exePath)
     return name.startsWith("wine") || name.endsWith("-preloader");
 }
 
-// "Z:\home\me\game.exe" is the Linux path /home/me/game.exe; other drives stay as Windows paths.
-QString fromWinePath(const QString& path)
+// The Linux folder behind a drive letter of a Wine process: the link in its prefix's dosdevices
+// folder (Proton maps the Steam library to S: and / to Z:). Empty when it cannot be found.
+QString wineDriveRoot(uint32_t pid, QChar drive)
+{
+    QByteArray env;
+    if (readProc(pid, "environ", env)) {
+        for (const QByteArray& entry : env.split('\0')) {
+            if (!entry.startsWith("WINEPREFIX="))
+                continue;
+            const QString link = QString::fromUtf8(entry.mid(11)) + "/dosdevices/" + drive.toLower() + ':';
+            const QString target = QFileInfo(link).symLinkTarget();
+            if (!target.isEmpty())
+                return target;
+        }
+    }
+    return drive.toUpper() == 'Z' ? QString("/") : QString();
+}
+
+// "S:\steamapps\common\game.exe" of process `pid` as a Linux path; unknown drives stay Windows paths.
+QString fromWinePath(uint32_t pid, const QString& path)
 {
     static const QRegularExpression drive("^[A-Za-z]:\\\\");
     if (!drive.match(path).hasMatch())
         return path;
-    if (path.startsWith("Z:", Qt::CaseInsensitive)) {
-        QString linux_ = path.mid(2);
-        linux_.replace('\\', '/');
-        return linux_;
+    QString rest = path.mid(3);
+    rest.replace('\\', '/');
+    if (const QString root = wineDriveRoot(pid, path[0]); !root.isEmpty())
+        return QDir::cleanPath(root + '/' + rest);
+
+    // The prefix cannot be read (a game in Steam's sandbox, seen from a container). Proton maps
+    // the Steam folder to S:, so look for the file there.
+    const QString home = QDir::homePath();
+    for (const QString& steam : {home + "/.local/share/Steam", home + "/.steam/steam",
+                                 home + "/.var/app/com.valvesoftware.Steam/.local/share/Steam"}) {
+        const QString candidate = QDir::cleanPath(steam + '/' + rest);
+        if (QFileInfo::exists(candidate))
+            return candidate;
     }
+    return path;
+}
+
+// Fedora Atomic (Bazzite, Silverblue) keeps homes in /var/home with /home linked to it, and in a
+// container both can be separate mounts of the same folder. A path in the other form is written in
+// the form of $HOME, as the app saves paths, so the two compare equal.
+QString inHomeForm(const QString& path)
+{
+    static const QString home = QDir::homePath();
+    static const QString alias = []() {
+        const QString other = home.startsWith("/var/home/") ? home.mid(4)
+                            : home.startsWith("/home/")     ? "/var" + home
+                                                            : QString();
+        struct stat a{}, h{};
+        if (other.isEmpty() || ::stat(other.toLocal8Bit().constData(), &a) != 0
+            || ::stat(home.toLocal8Bit().constData(), &h) != 0 || a.st_dev != h.st_dev || a.st_ino != h.st_ino)
+            return QString();
+        return other;
+    }();
+    if (!alias.isEmpty() && (path == alias || path.startsWith(alias + '/')))
+        return home + path.mid(alias.size());
     return path;
 }
 
@@ -324,10 +375,23 @@ public:
     {
         if (!isValid(window))
             return false;
+        const xcb_window_t w = toWin(window);
+
+        // A whole monitor is asked of the window manager as full screen: that drops the frame and
+        // ignores size limits, which Wine sets on windows that may not be resized (min = max size).
+        // Any other size first leaves full screen, or the manager keeps the window where it is.
+        const auto screens = monitors();
+        const bool wholeMonitor = std::any_of(screens.begin(), screens.end(),
+                                              [&](const Monitor& m) { return m.full == outer; });
+        if (!wholeMonitor && hasState(w, "_NET_WM_STATE_FULLSCREEN")) {
+            x().changeState(w, Remove, "_NET_WM_STATE_FULLSCREEN");
+            waitFor([&]() { return !hasState(w, "_NET_WM_STATE_FULLSCREEN"); });
+        }
 
         // Window managers differ in what a requested position refers to (the client or its frame),
         // so ask once, look at where the window ended up and correct the request by the difference.
-        const auto e = frameExtents(toWin(window));
+        // For a monitor this also puts the window on it, which is where full screen will use.
+        const auto e = frameExtents(w);
         int cx = outer.left + e.left;
         int cy = outer.top + e.top;
         int cw = std::max(1, outer.width() - e.left - e.right);
@@ -335,14 +399,11 @@ public:
 
         constexpr int kAttempts = 3;
         for (int attempt = 0; attempt < kAttempts; ++attempt) {
-            sendGeometry(toWin(window), cx, cy, cw, ch);
+            sendGeometry(w, cx, cy, cw, ch);
 
             Fit::Rect now;
-            for (int wait = 0; wait < 5; ++wait) {   // moves are asynchronous: give the manager a moment
-                usleep(20000);
-                if (windowRect(window, now) && now == outer)
-                    return true;
-            }
+            if (waitFor([&]() { return windowRect(window, now) && now == outer; }))
+                return true;
             if (!windowRect(window, now))
                 return false;
             cx += outer.left - now.left;
@@ -352,7 +413,31 @@ public:
             cw = std::max(1, cw);
             ch = std::max(1, ch);
         }
+
+        if (wholeMonitor) {
+            x().changeState(w, Add, "_NET_WM_STATE_FULLSCREEN");
+            Fit::Rect now;
+            return waitFor([&]() { return windowRect(window, now) && now == outer; }, 15);
+        }
         return true;   // the request was made; the manager may have its own limits
+    }
+
+    bool hasState(xcb_window_t w, const char* name) const
+    {
+        const auto atoms = x().cardinals(w, "_NET_WM_STATE", XCB_ATOM_ATOM);
+        return std::find(atoms.begin(), atoms.end(), x().atom(name)) != atoms.end();
+    }
+
+    // Window manager requests are asynchronous: check `done` every 20 ms, `tries` times.
+    template <typename Done>
+    static bool waitFor(Done done, int tries = 5)
+    {
+        for (int i = 0; i < tries; ++i) {
+            usleep(20000);
+            if (done())
+                return true;
+        }
+        return false;
     }
 
     void stripFrame(quintptr window) override
@@ -370,6 +455,9 @@ public:
         const xcb_atom_t motif = x().atom("_MOTIF_WM_HINTS");
         xcb_change_property(x().get(), XCB_PROP_MODE_REPLACE, toWin(window), motif, motif, 32, 5, hints);
         xcb_flush(x().get());
+        // borderless full screen is the manager's full-screen state (see setBounds)
+        if (hasState(toWin(window), "_NET_WM_STATE_FULLSCREEN"))
+            x().changeState(toWin(window), Remove, "_NET_WM_STATE_FULLSCREEN");
     }
 
     void resetWindow(quintptr window) override
@@ -497,8 +585,9 @@ public:
 
     QString processImagePath(qint64 pid) const override
     {
-        const QString exe = QFileInfo(QString("/proc/%1/exe").arg(pid)).symLinkTarget();
-        if (exe.isEmpty() || !isWineLoader(exe))
+        // exe is empty when it may not be read (a sandboxed game seen from a container): try cmdline
+        const QString exe = inHomeForm(QFileInfo(QString("/proc/%1/exe").arg(pid)).symLinkTarget());
+        if (!exe.isEmpty() && !isWineLoader(exe))
             return exe;
 
         // A Wine/Proton process: its command line starts with the Windows image path.
@@ -507,7 +596,7 @@ public:
             return exe;
         const QString first = QString::fromUtf8(cmdline.left(cmdline.indexOf('\0')));
         static const QRegularExpression windowsPath("^[A-Za-z]:\\\\");
-        return windowsPath.match(first).hasMatch() ? fromWinePath(first) : exe;
+        return windowsPath.match(first).hasMatch() ? inHomeForm(fromWinePath(static_cast<uint32_t>(pid), first)) : exe;
     }
 
     uint64_t processCreationTime(uint32_t pid) const override
@@ -546,8 +635,36 @@ public:
         return QProcess::startDetached(path, {}, workingDir, pid);
     }
 
+    bool openUrl(const QString& url) override
+    {
+        // In a container (distrobox, toolbox) the handler for steam:// lives on the host.
+        const QString hostExec = QStandardPaths::findExecutable("distrobox-host-exec");
+        if (QFile::exists("/run/.containerenv") && !hostExec.isEmpty())
+            return QProcess::startDetached(hostExec, {"xdg-open", url});
+        return PlatformBackend::openUrl(url);
+    }
+
     // ----- Capture ---------------------------------------------------------
     QImage captureScreen(const Fit::Rect& rect) const override
+    {
+        // Fails under a Wayland compositor: XWayland's root window has no pixels (see captureWindow).
+        return grab(x().root(), rect, {0, 0, 0, 0});
+    }
+
+    // The window's own contents (its client area, the part on the screen). This also works under
+    // XWayland, where the screen itself cannot be read.
+    QImage captureWindow(quintptr window) const override
+    {
+        Fit::Rect client;
+        if (!clientRect(window, client))
+            return {};
+        const QImage image = grab(toWin(window), client, client);
+        return image.isNull() ? PlatformBackend::captureWindow(window) : image;
+    }
+private:
+    // The part of `rect` (screen coordinates) that is on the screen, read from `drawable`, whose
+    // top-left corner is at `origin` on the screen. Null on failure.
+    QImage grab(xcb_drawable_t drawable, const Fit::Rect& rect, const Fit::Rect& origin) const
     {
         if (!x().ok())
             return {};
@@ -556,7 +673,6 @@ public:
         if (!g)
             return {};
 
-        // the part of the rectangle that is on the screen
         const int left = std::max(rect.left, 0);
         const int top = std::max(rect.top, 0);
         const int right = std::min(rect.right, static_cast<int>(g->width));
@@ -568,8 +684,8 @@ public:
         const int h = bottom - top;
         Reply<xcb_get_image_reply_t> image(xcb_get_image_reply(
             x().get(),
-            xcb_get_image(x().get(), XCB_IMAGE_FORMAT_Z_PIXMAP, x().root(),
-                          static_cast<int16_t>(left), static_cast<int16_t>(top),
+            xcb_get_image(x().get(), XCB_IMAGE_FORMAT_Z_PIXMAP, drawable,
+                          static_cast<int16_t>(left - origin.left), static_cast<int16_t>(top - origin.top),
                           static_cast<uint16_t>(w), static_cast<uint16_t>(h), ~0u),
             nullptr));
         if (!image || xcb_get_image_data_length(image.get()) < w * h * 4)
@@ -579,7 +695,6 @@ public:
         return QImage(xcb_get_image_data(image.get()), w, h, w * 4, QImage::Format_RGB32).copy();
     }
 
-private:
     void sendGeometry(xcb_window_t window, int x_, int y_, int w, int h) const
     {
         if (windowManagerSupports("_NET_MOVERESIZE_WINDOW")) {
@@ -663,7 +778,7 @@ private:
 
     static void activate(xcb_window_t w)
     {
-        x().request(w, "_NET_ACTIVE_WINDOW", kSourceApplication, XCB_CURRENT_TIME, 0);
+        x().request(w, "_NET_ACTIVE_WINDOW", kSourcePager, XCB_CURRENT_TIME, 0);
     }
 
     // QScreen reports an origin in native pixels and a size in device-independent ones.

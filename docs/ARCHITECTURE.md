@@ -12,17 +12,21 @@ src/
   window/WindowManager.*        Window policy: scan, move, resize, fit, launch, kill (no OS calls; uses platform())
   window/MonitorHelper.*        Monitor indexes and geometry, read through platform()
   window/WindowStabilizer.h     Re-applies a window's rectangle when the game moves it (per-platform .cpp)
-  platform/PlatformBackend.*    Interface to the OS (windows, monitors, processes, screen capture) and platform()
+  platform/PlatformBackend.*    Interface to the OS (windows, monitors, processes, screen / window capture, opening URLs) and platform()
   platform/win32/Win32Backend.cpp           The Windows implementation of PlatformBackend
   platform/win32/Win32WindowStabilizer.cpp  WinEvent hook behind WindowStabilizer
-  platform/x11/X11Backend.cpp               The Linux implementation: xcb + EWMH for windows, QScreen for monitors, /proc for processes
+  platform/x11/X11Backend.cpp               The Linux implementation: xcb + EWMH for windows, QScreen for monitors, /proc for processes.
+                                            Wine image paths go through the prefix's dosdevices (Proton's S: is the Steam folder);
+                                            a whole-monitor rectangle becomes _NET_WM_STATE_FULLSCREEN; snapshots read the
+                                            window (captureWindow), as XWayland's root has no pixels
   platform/PollingWindowStabilizer.cpp      WindowStabilizer for systems without a move hook (checks every 100 ms)
   platform/unsupported/                     Stand-ins for features a platform lacks (the downscaled view on Linux)
   window/KillPlanner.*          Pure logic: which processes belong to this session
   window/FitCalculator.*        Pure logic: fit-to-monitor maths (Fit::compute) and the
                                 launch-settle trigger (Fit::Trigger)
   window/Supersample.*          Pure logic: letterbox, render size, parking position
-  window/SteamMatch.*           Pure logic: Steam AppID from a window class / pasted text, and which window is the target game (not wired in yet)
+  window/SteamMatch.*           Pure logic: Steam AppID from a window class / pasted text, the launch URL, and which window is the target game
+  window/SteamLibrary.*         Installed Steam games: libraryfolders.vdf / appmanifest parsing, tool filter, main-exe choice (pure, tested) and the folder scan
   helix/HelixRelease.*          Pure logic: versions, GitHub release parsing, checksums, update decision
   helix/HelixGame.*             Pure logic: where a game's FSR 3.1 DLLs are, installed / replaced state
   helix/HelixPaths.*            Pure logic: on-disk layout, built-package marker, post-build leftovers
@@ -35,7 +39,7 @@ src/
   ui/WindowTable.*              Table of the target's windows (+ empty-state message)
   ui/ControlPanels.*            Tab pages: StatePanel, PositionPanel, PresetPanel, CapturePanel
   ui/SnapshotCapture.*          Screenshot / burst capture
-  ui/GameRegistry.*             Saved-game helpers (names, entries, snapshot folders)
+  ui/GameRegistry.*             Saved-game helpers (names, entries, snapshot folders) and syncSteamGames (Steam libraries -> saved games)
   ui/FitDialog.*                "Fit window to monitor" popup (measurements + correction)
   ui/ScaledView.*               Downscaled view: overlay window + DWM thumbnail of the game
   ui/InfoDialogs.*              About dialog
@@ -186,7 +190,8 @@ Spin boxes are styled in the same sheet; their arrows are the SVGs in `resources
   (not `*.original.dll`) under the game root (`gameRootFor`: the exe folder, or the game folder when the
   exe is in bin / x64 / Win64 / Binaries). "Installed" means the DLL contains `HelixSR x.y.z`;
   "replaced" means HelixSR's record and backup exist but the DLL is the game's again.
-- Games on the HelixSR list have `helixConfirmed` set in `windowmanager.json`.
+- The HelixSR list shows every saved game; a game whose scan finds no FSR 3.1 DLL is disabled (greyed out, not
+  selectable). `helixConfirmed` in `windowmanager.json` caches the last result, so usable games sort first.
 - **Scans are asynchronous.** `Helix::scanGameAsync(context, exe, done)` runs `scanGame` on the global thread
   pool and calls `done` on the context's thread (dropped if the context is gone). `HelixPanel::rebuildGames`
   shows the list at once ("checking...") and fills each row as its scan returns; a generation counter drops the
@@ -221,6 +226,7 @@ unit-tested directly.
 | `tst_supersample` | letterbox (side bars, top/bottom bars, never exceeds the area), render size per factor and shape, parking position (behind the overlay vs beyond the desktop, with a monitor above/next to it), mouse mapping (pixel centres, black bars ignored, clamping while dragging, never past the last pixel) |
 | `tst_steammatch` | AppID from `steam_app_<id>` classes and pasted text (store URL, run URL, bare number), AppID beats a Wine loader image, another Steam game never matches, path / exe-name fallback |
 | `tst_windowmanager` | `WindowManager` and `MonitorHelper` against a fake `PlatformBackend`: which windows a scan keeps and their order, borderless fullscreen, centring on another monitor, missing monitors, toggle messages, kill scope |
+| `tst_steamlibrary` | `libraryfolders.vdf` (current and old format, Windows paths), appmanifest fields / install state / escapes, tool filter, main-exe choice (redistributables, crash reporters, Unreal shipping exe), a fake Steam folder with two libraries, and the sync into the saved games (add, keep the user's name, AppID for a game added by hand, uninstalled vs. drive not connected, moved exe) |
 | `tst_x11backend` | Linux only: the real X11 backend against an xterm (list, title, pid, move/resize, frame strip/restore, process info, terminate); skips itself without a display |
 | `tst_appconfig` | save/load round-trip, clearing profiles, corrupt/missing files, legacy keys, the HelixSR flag |
 | `tst_helix` | version parsing/ordering, release choice (no prereleases, the right zip), checksums, update decision, DLL version, game root, FSR DLL detection and installed / replaced state, async scan delivery, built-package marker and driver fingerprint, post-build leftovers, helixsr.ini parsing and in-place editing, GPU family and the can-this-PC-run-it verdict (a live probe of the test machine is printed too) |

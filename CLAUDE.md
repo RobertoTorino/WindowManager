@@ -26,7 +26,7 @@ The presets use a bare `clang-cl` from PATH. Use the VS 2026 one (Clang 22, `C:\
 
 `cmake --preset windows-clang-debug -DCMAKE_C_COMPILER=<path> -DCMAKE_CXX_COMPILER=<path>`
 
-### Linux (Bazzite, `linux-port` branch)
+### Linux (Bazzite)
 
 The host is immutable and has no toolchain. Build inside the `wm-dev` distrobox (Fedora 44 toolbox image, with
 cmake, ninja, clang, gcc, qt6-qtbase-devel, qt6-qttools-devel, libX11/xcb devel and xterm). Prefix commands with
@@ -66,9 +66,9 @@ The desktop is KDE Plasma on Wayland. The X11 backend only sees XWayland windows
 
 ## Bugs found on Linux that also affect Windows
 
-Found while testing on Bazzite. Each is fixed in shared code on `linux-port` (there is one source tree;
-`main` has the released Windows app without the Linux work). Checked on Windows on 2026-10-19: the
-`linux-port` branch builds with Clang 22 and the 9 tests pass.
+Found while testing on Bazzite. Each is fixed in shared code (one source tree for both platforms; the
+`linux-port` branch was merged into `main` on 2026-10-19 and removed). Checked on Windows on 2026-10-19:
+it builds with Clang 22 and the 9 tests pass.
 
 - **checked on Windows:** with no target, the game dropdown showed the first game as if selected.
   Fix: `GameBar::setGames` selects nothing. Started with an empty `lastExePath`: the dropdown is empty.

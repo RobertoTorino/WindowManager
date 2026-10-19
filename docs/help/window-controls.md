@@ -30,7 +30,7 @@ found yet (start the game, then press **Scan**).
   On Linux, *True Borderless FS* puts the window in the desktop's own full-screen mode, because KDE
   will not resize a Proton game's fixed-size window or remove its title bar. *Windowed* takes it out again.
 - **Extended styles:** Topmost, Tool Window, Layered, No Activate. These are toggles;
-  green means on.
+  green means on. On Linux only Topmost and Tool Window work (see [Linux](linux.md)).
 
 ### Position & Size
 - **Move:** the arrow pad moves the window by *Step* pixels.

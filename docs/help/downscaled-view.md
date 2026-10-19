@@ -4,6 +4,8 @@ A sharper picture without anything falling off the screen. The game window is ma
 (for example 2x the monitor, so the game renders 4 times as many pixels) and kept out of
 sight, while a full-screen overlay on the monitor shows a live, scaled-down copy.
 
+Windows only for now: on Linux the downscaled view is not available yet (see [Linux](linux.md)).
+
 ## Using it (Downscale tab)
 
 1. Select the game window first (Scan).

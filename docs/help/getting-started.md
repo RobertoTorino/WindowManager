@@ -4,6 +4,9 @@ WindowManager takes control of the windows of a game or emulator: true borderles
 fullscreen, exact sizes, moving between monitors, keeping a window in place, a sharper
 downscaled picture and screenshots.
 
+It runs on Windows, and as a beta on Linux for Steam games under Proton (Bazzite, KDE Plasma).
+See [Linux](linux.md) for what works there.
+
 ## The first five minutes
 
 1. **Add a game.** Games installed through Steam are already in the dropdown. For anything else
@@ -40,6 +43,7 @@ Every action is also written to the game's log. See [Logs and troubleshooting](l
 - [Fit to monitor](fit-to-monitor.md)
 - [Downscaled view](downscaled-view.md)
 - [HelixSR](helixsr.md)
+- [Linux (beta)](linux.md)
 - [Logs and troubleshooting](logs-and-troubleshooting.md)
 - [Shortcuts](shortcuts.md)
 - [Reference](reference.md)

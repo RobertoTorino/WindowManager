@@ -1,5 +1,5 @@
 site_name: WindowManager
-site_description: Tame the windows of games and emulators on Windows.
+site_description: Tame the windows of games and emulators on Windows, and of Proton games on Linux (beta).
 docs_dir: docs
 theme:
   name: material   # needs `pip install mkdocs-material`; remove this block for the plain default theme
@@ -11,7 +11,11 @@ nav:
       - Fit to monitor: help/fit-to-monitor.md
       - Downscaled view: help/downscaled-view.md
       - HelixSR: help/helixsr.md
+      - Linux (beta): help/linux.md
       - Logs and troubleshooting: help/logs-and-troubleshooting.md
       - Shortcuts: help/shortcuts.md
       - Reference: help/reference.md
-  - Code layout: ARCHITECTURE.md
+  - Development:
+      - Code layout: ARCHITECTURE.md
+      - Linux port notes: LINUX_PORT.md
+      - HelixSR 2.x plan: HELIXSR_2.md

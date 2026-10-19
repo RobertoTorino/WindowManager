@@ -8,5 +8,5 @@
 | Ctrl+F | Fit window to monitor... |
 | Ctrl+L | View logs... |
 | Ctrl+M | Move this app's window to the other monitor |
-| Ctrl+Alt+D | Stop the downscaled view (works even when this app is not focused) |
+| Ctrl+Alt+D | Stop the downscaled view (works even when this app is not focused). Windows only. |
 | Ctrl+Q | Exit |

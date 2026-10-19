@@ -1,3 +1,5 @@
+[![CI Build and Release](https://github.com/RobertoTorino/WindowManager/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/RobertoTorino/WindowManager/actions/workflows/release.yml)
+[![Status: Beta](https://img.shields.io/badge/status-beta-orange.svg)](CHANGELOG.md)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 # WindowManager
@@ -5,6 +7,9 @@
 A Windows tool for taming the windows of games and emulators: force true borderless
 fullscreen, set exact sizes, nudge and resize, move a game between monitors, keep a
 window from drifting, and grab screenshots. Built with C++20 and Qt 6.
+
+WindowManager is in **beta**. It also runs on Linux for Steam games under Proton (Bazzite, KDE Plasma),
+with fewer features and no download yet: see [Linux](docs/help/linux.md).
 
 - [Using WindowManager](#using-windowmanager)
 - [Fit to monitor (automatic)](#fit-to-monitor-automatic)
@@ -17,7 +22,8 @@ window from drifting, and grab screenshots. Built with C++20 and Qt 6.
 - [Help pages](docs/help/getting-started.md) (also shown in the app under Help)
 - [Building and testing](BUILD.md)
 - [Changelog](CHANGELOG.md)
-- [Linux port (work in progress)](docs/LINUX_PORT.md)
+- [Linux (beta): what works, how to build it](docs/help/linux.md)
+- [Linux port notes (development)](docs/LINUX_PORT.md)
 - [Code layout](docs/ARCHITECTURE.md)
 
 ---

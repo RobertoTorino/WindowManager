@@ -4,7 +4,7 @@ name: Linux build (work in progress)
 on:
   push:
     branches:
-      - linux-port
+      - main
   pull_request:
   workflow_dispatch:
 

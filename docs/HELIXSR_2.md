@@ -1,7 +1,7 @@
 # HelixSR 2.x support (not started)
 
 Working notes for moving the HelixSR tab from HelixSR 1.x to 2.x. Until this is done the app sets up and
-updates HelixSR **1.x only** (`Helix::kSupportedMajor` in [src/helix/HelixRelease.h](../src/helix/HelixRelease.h));
+updates HelixSR **1.x only** (`Helix::kSupportedMajor` in `src/helix/HelixRelease.h`);
 the tab says when a newer major version is out. Facts below are from the HelixSR 2.0.0 release (2026-10-19,
 `HelixSR-2.0.0.zip`, SHA-256 `0d60686e...7f52`).
 
@@ -66,7 +66,7 @@ python -I setup/helixsr_bridge.py <release dir> log --game DIR
 
 Later, separate decisions: HelixSR Scaler (`--way scaler`, covers DLSS/XeSS/FSR 2 games, GPL, OptiScaler,
 anti-cheat risk) and frame generation (`--fg on`, needs the frame-generation build). 2.0 also runs on Linux /
-Proton (`helixsr-setup.sh`), which fits the `linux-port` branch: the bridge is plain Python.
+Proton (`helixsr-setup.sh`), which fits the Linux port: the bridge is plain Python.
 
 ## Working rules
 

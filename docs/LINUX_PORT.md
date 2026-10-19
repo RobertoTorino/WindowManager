@@ -1,4 +1,4 @@
-# Linux port (branch `linux-port`)
+# Linux port
 
 Working notes for porting WindowManager to Linux, with Bazzite (Desktop Mode, Proton games) as the main
 target. Read this first when continuing on a Linux machine.
@@ -14,7 +14,7 @@ scaling covers the downscaled view).
 
 ## Design
 
-All OS access sits behind `PlatformBackend` ([src/platform/PlatformBackend.h](../src/platform/PlatformBackend.h)),
+All OS access sits behind `PlatformBackend` (`src/platform/PlatformBackend.h`),
 returned by `platform()`. `WindowManager`, `MonitorHelper`, the controller and `SnapshotCapture` only
 call that interface. Implementations:
 
@@ -88,7 +88,7 @@ and Steam processes. Use a **Desktop Mode** session. Open the repo in VS Code *i
 Claude Code can build and run things.
 
 ```
-git clone -b linux-port <repo url> WindowManager && cd WindowManager
+git clone <repo url> WindowManager && cd WindowManager
 distrobox create -n wm-dev -i registry.fedoraproject.org/fedora-toolbox:44
 distrobox enter wm-dev
 sudo dnf install -y cmake ninja-build clang gcc-c++ qt6-qtbase-devel qt6-qtbase-private-devel \

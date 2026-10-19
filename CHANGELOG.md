@@ -6,6 +6,10 @@ Notable changes to WindowManager. The version number lives in `APP_VERSION` in `
 ## Unreleased
 
 ### Added
+- Help page *Linux (beta)* (in the app under Help and on the MkDocs site): what works on Bazzite with Proton
+  games, what does not yet, and how to build it. Linux notes on the downscaled view, window styles and
+  shortcuts pages. The MkDocs site gets a *Development* section with the Linux port and HelixSR 2.x notes.
+- README badges: the release build's status and *Beta*.
 - **Steam games are found by themselves.** At start-up (and with *File > Find Steam games*) the app reads
   Steam's library files and adds every installed game to the game list, with Steam's name and the game's
   main executable. Proton, the Steam Linux Runtime and the redistributables are left out. An uninstalled
@@ -14,6 +18,8 @@ Notable changes to WindowManager. The version number lives in `APP_VERSION` in `
 - `scripts/free-memory.sh` (Linux): shows what uses memory and closes browsers / IDEs before testing a game.
 
 ### Changed
+- No more nightly builds: the *Nightly / Beta* workflow (pre-releases from `develop` and `test-v*` tags) is
+  removed. Releases come from `main` only.
 - **The HelixSR tab lists every game.** Games without an AMD FSR 3.1 DLL are greyed out and cannot be
   selected; the others come first. *Check selected game* and *Forget* are gone, as the list now checks
   every game by itself.

@@ -499,6 +499,7 @@ void MainWindow::buildMenus()
     help->addAction("&Help topics", QKeySequence::HelpContents, this, [this]() { HelpDialog::open(this); });
     help->addAction("&Keyboard shortcuts", this, [this]() { HelpDialog::open(this, "shortcuts"); });
     help->addAction("&Logs and troubleshooting", this, [this]() { HelpDialog::open(this, "logs-and-troubleshooting"); });
+    help->addAction("Online &wiki", this, []() { QDesktopServices::openUrl(HelpDialog::wikiUrl()); });
     help->addSeparator();
     help->addAction("&About", this, [this]() { InfoDialogs::showAbout(this); });
 }

@@ -1,0 +1,237 @@
+/* WindowManager wiki: blue, brushed-steel look to match the app icon. */
+
+:root,
+[data-md-color-scheme="default"] {
+  --wm-navy: #06214f;
+  --wm-deep: #0a3a8a;
+  --wm-blue: #1565c0;
+  --wm-sky: #42a5f5;
+  --wm-ice: #e8f1fc;
+
+  --md-primary-fg-color: #0a3a8a;
+  --md-primary-fg-color--light: #1e6fd1;
+  --md-primary-fg-color--dark: #06214f;
+  --md-primary-bg-color: #ffffff;
+  --md-accent-fg-color: #1e88e5;
+  --md-accent-fg-color--transparent: rgba(30, 136, 229, 0.1);
+  --md-default-bg-color: #fbfdff;
+  --md-typeset-a-color: #1259b3;
+
+  --wm-card-bg: #ffffff;
+  --wm-card-border: #d6e4f7;
+  --wm-shadow: 0 6px 24px rgba(6, 33, 79, 0.12);
+}
+
+[data-md-color-scheme="slate"] {
+  --md-hue: 215;
+  --wm-ice: #12233d;
+
+  --md-primary-fg-color: #0d3f8f;
+  --md-primary-fg-color--light: #2a7de1;
+  --md-primary-fg-color--dark: #061a3d;
+  --md-accent-fg-color: #64b5f6;
+  --md-accent-fg-color--transparent: rgba(100, 181, 246, 0.12);
+  --md-default-bg-color: hsl(215, 38%, 10%);
+  --md-typeset-a-color: #7ab8ff;
+
+  --wm-card-bg: hsl(215, 34%, 14%);
+  --wm-card-border: hsl(215, 32%, 24%);
+  --wm-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* Header and tabs: a blue gradient with a faint brushed-metal sheen. */
+.md-header,
+.md-tabs {
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.025) 0 2px, transparent 2px 5px),
+    linear-gradient(90deg, var(--wm-navy), var(--wm-deep) 45%, var(--wm-blue));
+}
+
+.md-typeset h1 {
+  color: var(--md-primary-fg-color);
+  font-weight: 700;
+}
+[data-md-color-scheme="slate"] .md-typeset h1 { color: #9cc9ff; }
+
+.md-typeset h2 {
+  border-bottom: 2px solid var(--wm-card-border);
+  padding-bottom: 0.2em;
+}
+
+.md-typeset table:not([class]) th {
+  background: var(--md-primary-fg-color);
+  color: #fff;
+}
+
+/* Home page hero. */
+.wm-hero {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  margin: 0 0 2rem;
+  padding: 2.2rem 2rem;
+  border-radius: 1rem;
+  color: #fff;
+  background:
+    repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.035) 0 2px, transparent 2px 6px),
+    radial-gradient(circle at 15% 20%, rgba(120, 190, 255, 0.45), transparent 55%),
+    linear-gradient(135deg, var(--wm-navy), var(--wm-deep) 50%, #1976d2);
+  box-shadow: var(--wm-shadow);
+}
+.wm-hero__icon {
+  width: 9rem;
+  flex: none;
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.45));
+}
+.md-typeset .wm-hero h1 {
+  color: #fff;
+  margin: 0 0 0.3em;
+  font-size: 2.4em;
+}
+.wm-hero p { margin: 0.4em 0; font-size: 1.05em; opacity: 0.95; }
+.wm-hero .md-button { margin: 0.6em 0.4em 0 0; color: #fff; border-color: rgba(255, 255, 255, 0.7); }
+.wm-hero .md-button--primary { background: #fff; color: var(--wm-deep); border-color: #fff; }
+.wm-hero .md-button:hover { background: var(--wm-sky); border-color: var(--wm-sky); color: #fff; }
+
+@media screen and (max-width: 44.9375em) {
+  .wm-hero { flex-direction: column; text-align: center; padding: 1.6rem 1rem; }
+  .wm-hero__icon { width: 6.5rem; }
+}
+
+/* Cards. */
+.md-typeset .grid.cards > ul > li,
+.md-typeset .grid > .card {
+  background: var(--wm-card-bg);
+  border: 1px solid var(--wm-card-border);
+  border-radius: 0.8rem;
+  border-top: 3px solid var(--md-accent-fg-color);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.md-typeset .grid.cards > ul > li:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--wm-shadow);
+}
+.md-typeset .grid.cards .twemoji,
+.md-typeset .grid.cards .lg { color: var(--md-accent-fg-color); }
+
+/* Screenshots (placeholders until the real ones are added). */
+.md-typeset img.wm-shot {
+  display: block;
+  margin: 1em auto;
+  border-radius: 0.6rem;
+  border: 1px solid var(--wm-card-border);
+  box-shadow: var(--wm-shadow);
+}
+
+/* Footer link columns (overrides/main.html). */
+.wm-footer {
+  background: linear-gradient(180deg, var(--wm-deep), var(--wm-navy));
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.7rem;
+}
+.wm-footer__inner {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 1.2rem;
+  padding: 1.6rem 0.8rem;
+}
+.wm-footer h4 {
+  margin: 0 0 0.5em;
+  color: #fff;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.wm-footer ul { list-style: none; margin: 0; padding: 0; }
+.wm-footer li { margin: 0.3em 0; }
+.wm-footer a { color: rgba(255, 255, 255, 0.85); }
+.wm-footer a:hover { color: #9cd0ff; }
+.md-footer-meta { background: var(--wm-navy); }
+
+/* Buttons outside the hero: readable in both modes. */
+[data-md-color-scheme="slate"] .md-typeset .md-button:not(.md-button--primary) {
+  color: #9cc9ff;
+  border-color: #4a8fe0;
+}
+[data-md-color-scheme="slate"] .md-typeset .md-button--primary {
+  background: var(--md-primary-fg-color--light);
+  border-color: var(--md-primary-fg-color--light);
+}
+
+/* Admonitions in the blue palette (info, tip, question). */
+.md-typeset .admonition.info, .md-typeset details.info,
+.md-typeset .admonition.tip, .md-typeset details.tip,
+.md-typeset .admonition.question, .md-typeset details.question {
+  border-color: var(--md-accent-fg-color);
+}
+.md-typeset .info > .admonition-title, .md-typeset .info > summary,
+.md-typeset .tip > .admonition-title, .md-typeset .tip > summary,
+.md-typeset .question > .admonition-title, .md-typeset .question > summary {
+  background-color: var(--md-accent-fg-color--transparent);
+}
+.md-typeset .info > .admonition-title::before, .md-typeset .info > summary::before,
+.md-typeset .tip > .admonition-title::before, .md-typeset .tip > summary::before,
+.md-typeset .question > .admonition-title::before, .md-typeset .question > summary::before {
+  background-color: var(--md-accent-fg-color);
+}
+
+.md-footer { background: var(--wm-navy); }
+.md-typeset details > summary::after { color: var(--md-accent-fg-color); }
+
+/* Header (overrides/partials/header.html): big icon and name, text links on the right. */
+.wm-header .md-header__inner {
+  height: 4.8rem;
+  padding: 0 0.6rem;
+  align-items: center;
+}
+.wm-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  color: #fff;
+  font-size: 1.1rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.wm-brand:hover { color: #fff; }
+.wm-brand img {
+  height: 4.2rem;
+  width: auto;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.45));
+}
+.wm-header__spacer { flex: 1; }
+.wm-header__link {
+  margin-left: 2rem;
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.wm-header__link:hover { color: #9cd0ff; }
+.wm-header .md-header__option { align-self: center; color: #fff; }
+.wm-header .md-search { margin-left: 0.6rem; }
+.wm-header .md-search__form { border-radius: 1.2rem; background: rgba(0, 0, 0, 0.25); }
+.wm-header .md-search__input { border-radius: 1.2rem; }
+.wm-header .md-header__button.md-icon { align-self: center; }
+
+/* The sidebars start below the taller header. */
+.md-sidebar { top: 4.8rem; }
+@media screen and (max-width: 44.9375em) {
+  .wm-header .md-header__inner { height: 3.6rem; }
+  .wm-brand { font-size: 0.9rem; gap: 0.5rem; }
+  .wm-brand img { height: 2.8rem; }
+  .wm-header__link { margin-left: 0.9rem; font-size: 0.75rem; }
+  .md-sidebar { top: 0; }
+}
+
+/* Hero buttons win over the general dark-mode button colours above. */
+[data-md-color-scheme] .md-typeset .wm-hero .md-button { color: #fff; background: transparent; border-color: rgba(255, 255, 255, 0.7); }
+[data-md-color-scheme] .md-typeset .wm-hero .md-button--primary { background: #fff; color: var(--wm-deep); border-color: #fff; }
+[data-md-color-scheme] .md-typeset .wm-hero .md-button:hover { background: var(--wm-sky); border-color: var(--wm-sky); color: #fff; }
+
+/* Phones: the header must not push the page wider than the screen. */
+.wm-header .md-header__inner { overflow: hidden; }
+@media screen and (max-width: 30em) {
+  .wm-brand span { display: none; }
+  .wm-header__link { margin-left: 0.7rem; }
+}

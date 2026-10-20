@@ -6,6 +6,9 @@ Notable changes to WindowManager. The version number lives in `APP_VERSION` in `
 ## Unreleased
 
 ### Added
+- **Demo video** on the wiki's home page (*See it in action*): a one-minute tour of Start, Fit to monitor, the
+  F1 focus switch, Windowed, exact sizes, snapshots and Kill. `scripts/demo-video/record-demo.ps1` records it
+  again (stand-in game, captions, 1080p for YouTube and 720p for the wiki).
 - **Game config tab**: settings written into the selected game's own config files on Start / Restart, for
   Unreal Engine 4 games with loose config files (first for Tekken 7's arcade builds). **Render scale**
   (`r.ScreenPercentage`: above 100 % the engine supersamples in the same window, below 100 % it is faster),
@@ -66,8 +69,20 @@ Notable changes to WindowManager. The version number lives in `APP_VERSION` in `
   game is removed (its saved position is kept); names you gave are kept. Works on Windows and Linux.
 - **Steam games start through Steam** (`steam://rungameid/<AppID>`), so Proton, DRM and the overlay work.
 - `scripts/free-memory.sh` (Linux): shows what uses memory and closes browsers / IDEs before testing a game.
+- **The wiki**: the full documentation as a site on GitHub Pages (<https://robertotorino.github.io/WindowManager/>),
+  with a blue theme, a home page, a header with the icon and *GitHub* / *Wiki* links (search on the wiki pages), a
+  footer and placeholder screenshots. Built by the new `docs.yml` workflow on every
+  push to `main` that touches `docs/`, `overrides/` or `mkdocs.yml`. New pages: Download and install, The main
+  window, Focus, mouse and hotkeys, GPU and power, Files and settings, Safety, and under Development: Building and
+  testing (was `BUILD.md`) and The docs site.
+- **Help > Online wiki**, and a link to the wiki in the help window. Links to the wiki in the help pages open in the
+  browser.
 
 ### Changed
+- New app icon (window, taskbar and the `.exe`).
+- **The README and the in-app help are short now**: the README says what the app is for and how to get started;
+  each help page has the highlights and a link to its wiki page. New help topic *Focus and hotkeys*; the window
+  terms reference moved to the wiki.
 - **The window list follows the game by itself**: when the game opens, closes, moves or resizes a window (at once on
   Windows through the game watch, otherwise every 3 seconds), without a log line each time. A window you picked
   stays active while it exists; when it closes, the best remaining one becomes active. Before, the list only

@@ -184,7 +184,7 @@ cmake --build build/linux
 ctest --test-dir build/linux --output-on-failure
 ```
 
-This dnf line was used on Bazzite (Fedora 44 toolbox image). `BUILD.md` lists the Ubuntu names. The host has
+This dnf line was used on Bazzite (Fedora 44 toolbox image). `docs/development/building.md` lists the Ubuntu names. The host has
 `xdotool`, `xprop`, `wmctrl` and `spectacle` for the probes. On a machine with little RAM, run
 `scripts/free-memory.sh` (add `--close` to close browsers and IDEs) before starting a game.
 

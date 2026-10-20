@@ -1,7 +1,9 @@
 #include "HelpDialog.h"
 
+#include <QDesktopServices>
 #include <QFile>
 #include <QHBoxLayout>
+#include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPointer>
@@ -14,9 +16,11 @@ namespace {
 
 // Reading order of the topics. Titles come from each page's first heading.
 const QStringList kTopics = {
-    "getting-started", "games-and-launching", "window-controls", "fit-to-monitor",
-    "downscaled-view", "display-settings", "game-config", "game-stats", "helixsr", "linux", "logs-and-troubleshooting", "shortcuts", "reference",
+    "getting-started", "games-and-launching", "window-controls", "fit-to-monitor", "downscaled-view",
+    "display-settings", "game-config", "focus", "game-stats", "helixsr", "linux", "logs-and-troubleshooting", "shortcuts",
 };
+
+const QString kWiki = "https://robertotorino.github.io/WindowManager/";
 
 QString readPage(const QString &topic)
 {
@@ -55,9 +59,14 @@ HelpDialog::HelpDialog(QWidget *parent)
     m_topics->setMaximumWidth(260);
     m_page->setOpenLinks(false);   // .md links switch topic; handled in followLink
 
+    auto *wiki = new QLabel(QString("<a href=\"%1\">Online wiki</a>: everything in full").arg(kWiki), this);
+    wiki->setOpenExternalLinks(true);
+    wiki->setWordWrap(true);
+
     auto *left = new QVBoxLayout;
     left->addWidget(m_search);
     left->addWidget(m_topics, 1);
+    left->addWidget(wiki);
 
     auto *layout = new QHBoxLayout(this);
     layout->addLayout(left);
@@ -110,7 +119,11 @@ void HelpDialog::showTopic(int row)
 
 void HelpDialog::followLink(const QUrl &url)
 {
-    // Pages link to each other as "topic.md" so they also work on GitHub and in MkDocs.
+    if (url.scheme() == "http" || url.scheme() == "https") {
+        QDesktopServices::openUrl(url);   // the online wiki
+        return;
+    }
+    // Pages link to each other as "topic.md" so they also work on GitHub.
     const QString file = url.path();
     if (!file.endsWith(".md"))
         return;
@@ -143,4 +156,9 @@ void HelpDialog::open(QWidget *parent, const QString &topic)
     }
     g_open->raise();
     g_open->activateWindow();
+}
+
+QUrl HelpDialog::wikiUrl(const QString &page)
+{
+    return QUrl(kWiki + page);
 }

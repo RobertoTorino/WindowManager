@@ -1,24 +1,106 @@
 site_name: WindowManager
 site_description: Tame the windows of games and emulators on Windows, and of Proton games on Linux (beta).
+site_url: https://robertotorino.github.io/WindowManager/
+repo_url: https://github.com/RobertoTorino/WindowManager
+repo_name: RobertoTorino/WindowManager
+edit_uri: edit/main/docs/
+copyright: WindowManager is free software under the GPL-3.0. Not affiliated with Microsoft, NVIDIA, AMD, Intel, Valve or any game publisher.
 docs_dir: docs
+# docs/help/ holds the short in-app help pages (embedded in the exe); the wiki has the full pages.
+exclude_docs: |
+  help/
+
 theme:
-  name: material   # needs `pip install mkdocs-material`; remove this block for the plain default theme
+  name: material   # needs `pip install mkdocs-material`
+  custom_dir: overrides
+  logo: assets/icon.png
+  favicon: assets/favicon.png
+  font:
+    text: Inter
+    code: JetBrains Mono
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - toc.follow
+
+extra_css:
+  - assets/extra.css
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/RobertoTorino/WindowManager
+      name: WindowManager on GitHub
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+validation:
+  anchors: warn
+
 nav:
-  - Help:
-      - Getting started: help/getting-started.md
-      - Games and launching: help/games-and-launching.md
-      - Window controls: help/window-controls.md
-      - Fit to monitor: help/fit-to-monitor.md
-      - Downscaled view: help/downscaled-view.md
-      - Display settings: help/display-settings.md
-      - Game config: help/game-config.md
-      - Game stats, GPU and power: help/game-stats.md
-      - HelixSR: help/helixsr.md
-      - Linux (beta): help/linux.md
-      - Logs and troubleshooting: help/logs-and-troubleshooting.md
-      - Shortcuts: help/shortcuts.md
-      - Reference: help/reference.md
+  - Home: index.md
+  - Get started:
+      - Download and install: wiki/install.md
+      - First steps: wiki/getting-started.md
+      - The main window: wiki/the-window.md
+  - Using the app:
+      - Games and launching: wiki/games-and-launching.md
+      - Window controls: wiki/window-controls.md
+      - Fit to monitor: wiki/fit-to-monitor.md
+      - Downscaled view: wiki/downscaled-view.md
+      - Display settings: wiki/display-settings.md
+      - Game config: wiki/game-config.md
+      - Focus, mouse and hotkeys: wiki/focus-and-hotkeys.md
+      - Game stats and floating bar: wiki/game-stats.md
+      - GPU and power: wiki/gpu-and-power.md
+      - HelixSR: wiki/helixsr.md
+      - Linux (beta): wiki/linux.md
+  - Reference:
+      - Shortcuts: wiki/shortcuts.md
+      - Files and settings: wiki/files.md
+      - Logs and troubleshooting: wiki/logs-and-troubleshooting.md
+      - Safety: wiki/safety.md
+      - Window terms: wiki/window-terms.md
   - Development:
+      - Building and testing: development/building.md
       - Code layout: ARCHITECTURE.md
+      - The docs site: development/docs-site.md
       - Linux port notes: LINUX_PORT.md
       - HelixSR 2.x plan: HELIXSR_2.md

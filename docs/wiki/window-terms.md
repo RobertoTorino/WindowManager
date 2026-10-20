@@ -1,4 +1,4 @@
-# Reference: window terms
+# Window terms
 
 Background for the buttons and toggles. Nothing here needs to be learned to use the app.
 

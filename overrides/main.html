@@ -1,0 +1,51 @@
+{#- Material theme override: link columns above the standard footer. -#}
+{% extends "base.html" %}
+
+{#- The home page has the header only, no tabs. -#}
+{% block tabs %}
+  {% if not page.is_homepage %}{{ super() }}{% endif %}
+{% endblock %}
+
+{% block footer %}
+<div class="wm-footer">
+  <div class="md-grid wm-footer__inner">
+    <div>
+      <h4>Repository</h4>
+      <ul>
+        <li><a href="https://github.com/RobertoTorino/WindowManager">GitHub</a></li>
+        <li><a href="https://github.com/RobertoTorino/WindowManager/releases/latest">Latest release</a></li>
+        <li><a href="https://github.com/RobertoTorino/WindowManager/issues">Issues</a></li>
+        <li><a href="https://github.com/RobertoTorino/WindowManager/blob/main/CHANGELOG.md">Changelog</a></li>
+      </ul>
+    </div>
+    <div>
+      <h4>Get started</h4>
+      <ul>
+        <li><a href="{{ 'wiki/install/' | url }}">Download and install</a></li>
+        <li><a href="{{ 'wiki/getting-started/' | url }}">First steps</a></li>
+        <li><a href="{{ 'wiki/shortcuts/' | url }}">Shortcuts</a></li>
+        <li><a href="{{ 'wiki/logs-and-troubleshooting/' | url }}">Troubleshooting</a></li>
+      </ul>
+    </div>
+    <div>
+      <h4>Using the app</h4>
+      <ul>
+        <li><a href="{{ 'wiki/fit-to-monitor/' | url }}">Fit to monitor</a></li>
+        <li><a href="{{ 'wiki/downscaled-view/' | url }}">Downscaled view</a></li>
+        <li><a href="{{ 'wiki/game-stats/' | url }}">Game stats</a></li>
+        <li><a href="{{ 'wiki/linux/' | url }}">Linux (beta)</a></li>
+      </ul>
+    </div>
+    <div>
+      <h4>Development</h4>
+      <ul>
+        <li><a href="{{ 'development/building/' | url }}">Building and testing</a></li>
+        <li><a href="{{ 'ARCHITECTURE/' | url }}">Code layout</a></li>
+        <li><a href="{{ 'development/docs-site/' | url }}">The docs site</a></li>
+        <li><a href="https://github.com/RobertoTorino/WindowManager/blob/main/LICENSE">License (GPL-3.0)</a></li>
+      </ul>
+    </div>
+  </div>
+</div>
+{{ super() }}
+{% endblock %}

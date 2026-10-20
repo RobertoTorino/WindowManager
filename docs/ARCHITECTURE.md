@@ -67,7 +67,8 @@ src/
   ui/FitDialog.*                "Fit window to monitor" popup (measurements + correction)
   ui/ScaledView.*               Downscaled view: overlay window + DWM thumbnail of the game
   ui/InfoDialogs.*              About dialog
-  ui/HelpDialog.*               Help > Help topics: topic list + search over docs/help/*.md (embedded via the .qrc)
+  ui/HelpDialog.*               Help > Help topics: topic list + search over docs/help/*.md (embedded via the .qrc);
+                                web links and Help > Online wiki open the wiki (wikiUrl)
   ui/LogViewerDialog.*          File > View logs...: app and per-game log viewer
   ui/HelixPanel.*               HelixSR tab: set-up / update with a timer, list of confirmed games, run
   ui/DisplayPanel.*             Display tab: this PC's display settings, and the selected game's own
@@ -431,3 +432,22 @@ NVIDIA lookup ids (notebook vs desktop) and its answer, the log line, the sample
 The UI and the real OS backend (`platform/win32/`) are not unit-tested; they are checked by running the
 app. New logic that can be written without Win32 or widgets (like `KillPlanner`) should
 go in a Win32-free unit with a test.
+
+## Documentation
+
+```
+README.md                       What the app is for, getting started, link to the wiki
+docs/index.md                   Wiki home page (MkDocs site, https://robertotorino.github.io/WindowManager/)
+docs/wiki/*.md                  The user documentation in full
+docs/development/*.md           Building and testing, the docs site
+docs/ARCHITECTURE.md, LINUX_PORT.md, HELIXSR_2.md   Development notes (also in the wiki)
+docs/help/*.md                  In-app help: the highlights only, each page links to its wiki page;
+                                embedded via resources/resources.qrc, excluded from the site
+docs/assets/                    Logo, favicon, extra.css (the blue theme), screenshots/ (placeholders)
+overrides/                      Theme overrides: the header (partials/header.html), no tabs on the home page and
+                                the footer's link columns (main.html)
+mkdocs.yml                      Site settings and navigation
+.github/workflows/docs.yml      Builds the site (--strict) and publishes it to GitHub Pages
+```
+
+See [The docs site](development/docs-site.md).

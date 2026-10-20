@@ -7,7 +7,7 @@ Windows-only Qt 6 / C++20 app for managing a game's or emulator's windows: borde
 - **Never commit, stage or push.** The user does all git operations. Don't offer to either.
 - Match the surrounding code: comment density, naming, idiom.
 - Keep pure logic (no Win32, no widgets) separate and unit-tested, like `KillPlanner`, `FitCalculator` and `Supersample`.
-- Update README.md and docs/ARCHITECTURE.md when files or user-visible behaviour change.
+- Update the wiki (`docs/wiki/`) and docs/ARCHITECTURE.md when files or user-visible behaviour change.
 
 ## Build and test
 
@@ -49,10 +49,16 @@ The desktop is KDE Plasma on Wayland. The X11 backend only sees XWayland windows
 
 ## Help and docs
 
+- **The wiki** (MkDocs site, `docs/`) has the full documentation; README.md only says what the app is for and how to
+  get started; the in-app help pages (`docs/help/`) have the highlights and link to their wiki page.
+  See [docs/development/docs-site.md](docs/development/docs-site.md) (layout, screenshots, publishing).
 - In-app help (**Help > Help topics**, F1) is `HelpDialog`, fed by the markdown pages in `docs/help/`. They are embedded through `resources/resources.qrc` (alias `help/<name>.md`). A new page needs an entry in the qrc **and** in the `kTopics` list in [src/ui/HelpDialog.cpp](src/ui/HelpDialog.cpp).
 - Pages link to each other as `topic.md`, so they work in the app, on GitHub and in MkDocs.
-- `mkdocs.yml` builds the same pages as a site: `pip install mkdocs-material`, then `mkdocs serve` (output `site/` is git-ignored).
-- When behaviour changes, update the matching help page as well as README.md.
+- `mkdocs.yml` builds the wiki: `python -m mkdocs serve` (check with `python -m mkdocs build --strict`; output `site/` is
+  git-ignored). It excludes `docs/help/`. `.github/workflows/docs.yml` publishes it to
+  <https://robertotorino.github.io/WindowManager/> (Pages source: GitHub Actions). Screenshots in
+  `docs/assets/screenshots/` are placeholders the user replaces.
+- When behaviour changes, update the matching wiki page (`docs/wiki/`), and the help page if the highlights change.
 
 ## Status
 
@@ -94,7 +100,7 @@ The desktop is KDE Plasma on Wayland. The X11 backend only sees XWayland windows
 - Window list (2026-10-20): follows the game by itself (`refreshWindows`: watch events + every 3 s, quiet), the
   active row is green / bold / "Active". Checked in the scratch copy with charmap (row moved 100,100 -> 400,300
   without Scan).
-- Ideas, not started: a toolbar button for the log viewer (there is no settings dialog), more detailed logging inside `WindowManager.cpp`, a GitHub Pages workflow for the MkDocs site.
+- Ideas, not started: a toolbar button for the log viewer (there is no settings dialog), more detailed logging inside `WindowManager.cpp`.
 
 ## Where we left off (2026-10-20)
 

@@ -79,9 +79,9 @@ cmake --build build\windows-clang-debug
 ctest --test-dir build\windows-clang-debug --output-on-failure
 ```
 
-Five QtTest suites run: `tst_utilities`, `tst_killplanner`, `tst_fit`, `tst_supersample`, `tst_appconfig`.
+The QtTest suites (`tst_*`) run; `ctest -N` lists them.
 Run one directly with `build\windows-clang-debug\tst_killplanner.exe`, or one case with
-`tst_killplanner.exe unrelatedLoaderIsSpared`. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+`tst_killplanner.exe unrelatedLoaderIsSpared`. See [Code layout](../ARCHITECTURE.md)
 for what each covers.
 
 ---

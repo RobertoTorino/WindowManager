@@ -245,6 +245,11 @@ public:
         BringWindowToTop(hwnd);
     }
 
+    quintptr foregroundWindow() const override
+    {
+        return reinterpret_cast<quintptr>(GetForegroundWindow());
+    }
+
     void requestClose(quintptr window) override
     {
         PostMessage(toHwnd(window), WM_CLOSE, 0, 0);

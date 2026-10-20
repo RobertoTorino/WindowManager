@@ -506,6 +506,12 @@ public:
         activate(toWin(window));
     }
 
+    quintptr foregroundWindow() const override
+    {
+        const auto active = x().cardinals(x().root(), "_NET_ACTIVE_WINDOW", XCB_ATOM_WINDOW);
+        return active.empty() ? 0 : quintptr(active.front());
+    }
+
     void requestClose(quintptr window) override
     {
         x().request(toWin(window), "_NET_CLOSE_WINDOW", 0, kSourceApplication);

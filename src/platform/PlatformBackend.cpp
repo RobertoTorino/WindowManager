@@ -24,6 +24,11 @@ QImage PlatformBackend::captureWindow(quintptr window) const
     return windowRect(window, rect) ? captureScreen(rect) : QImage();
 }
 
+quintptr PlatformBackend::foregroundWindow() const
+{
+    return 0;
+}
+
 bool PlatformBackend::openUrl(const QString& url)
 {
     return QDesktopServices::openUrl(QUrl(url));

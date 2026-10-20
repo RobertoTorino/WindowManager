@@ -91,6 +91,8 @@ public:
     virtual void show(quintptr window, ShowState state) = 0;
     virtual void bringToTop(quintptr window) = 0;
     virtual void focus(quintptr window) = 0;          // restore + steal the foreground
+    // The window that has the keyboard (the foreground window); 0 if unknown or not supported.
+    virtual quintptr foregroundWindow() const;
     virtual void requestClose(quintptr window) = 0;   // polite close, the game may refuse
     // Not every system has every flag (e.g. no "layered" windows on X11).
     virtual bool supportsFlag(WindowFlag flag) const = 0;

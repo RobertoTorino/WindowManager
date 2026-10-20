@@ -6,6 +6,23 @@ Notable changes to WindowManager. The version number lives in `APP_VERSION` in `
 ## Unreleased
 
 ### Added
+- **Game config tab**: settings written into the selected game's own config files on Start / Restart, for
+  Unreal Engine 4 games with loose config files (first for Tekken 7's arcade builds). **Render scale**
+  (`r.ScreenPercentage`: above 100 % the engine supersamples in the same window, below 100 % it is faster),
+  **Resolution** (engine settings, user settings, `r.setres`, JConfig's DX resolution) and **JConfig window**
+  (`monitor_misc.bin`: the rectangle Tekken puts its window back to on every focus). Only those keys change; a copy
+  of each original is kept as `*.wm-original`, and **Restore originals** puts the game's values back. Each change
+  is logged (`GameConfig` lines). Help page *Game config*.
+- **Focus switch**: while a game runs, the stats bar shows **Focus: game / app / other**, and **F1** switches the
+  keyboard between the game and this app, also while the game has it (Tekken 7 keeps the focus, so the app's own
+  shortcuts never arrive). The app locks the foreground (`LockSetForegroundWindow`); a game that grabs it back anyway
+  (Tekken 7 with JConfig) puts the app in **mouse only** (`WS_EX_NOACTIVATE`): its buttons work with the mouse while
+  the game keeps the keyboard and controller, until the game closes. Each switch is logged with who had the focus
+  and who took it back. Registered only while a game runs; another key under *View > Focus switch hotkey...*.
+- **See-through window**: *View > Window opacity* (100 % to 40 %) makes the app's window transparent so it can sit
+  over the game on a single monitor; by default only while a game runs (*Only while a game runs*). Dialogs stay solid.
+- **Terminate key**: **F2 pressed twice within 2 seconds** terminates the game like *Shutdown*, also while the game
+  has the focus (the first press beeps). Registered only while a game runs; *View > Terminate hotkey...*.
 - **Game stats bar** (Windows): a second bar above the status bar with the running game's FPS and 1 % low,
   CPU, GPU use and the graphics card it renders on, RAM, video memory, and the power state. A warning
   appears for what is known to slow games down: on battery, battery saver, the power-saving power mode,
@@ -81,6 +98,8 @@ Notable changes to WindowManager. The version number lives in `APP_VERSION` in `
 - Snapshots go through `PlatformBackend::captureWindow` (on Windows the same screen capture as before).
 
 ### Fixed
+- *View > Check window fit after launching a game* turned off did not survive a restart: the setting was saved,
+  but at the next start the fit check was on again.
 - **Downscaled view drawn far too small (or too big)** on a monitor with another display scale: the black overlay
   was resized by Windows / Qt (seen at 640 x 480 on a 1920 x 1080 monitor). It is now pinned to the monitor.
 - **Downscaled view gave up after 5 corrections.** Tekken 7 sets its window back to 1280 x 720 every time it gets

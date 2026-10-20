@@ -33,6 +33,9 @@ set(WINDOW_MANAGER_SOURCES
     # Slice 2 – Utilities
     src/core/Utilities.h
     src/core/Utilities.cpp
+    # Ini text editing in place (pure, unit-tested through tst_helix and tst_gameconfig)
+    src/core/IniText.h
+    src/core/IniText.cpp
     # Slice 3 – MonitorHelper
     src/window/MonitorHelper.h
     src/window/MonitorHelper.cpp
@@ -57,6 +60,14 @@ set(WINDOW_MANAGER_SOURCES
     src/display/DisplaySession.cpp
     $<$<PLATFORM_ID:Windows>:src/platform/win32/Win32Display.cpp>
     $<$<NOT:$<PLATFORM_ID:Windows>>:src/platform/unsupported/DisplayUnsupported.cpp>
+    # A game's own config files (Game config tab): pure model (unit-tested) and the file writing
+    src/gameconfig/GameConfigModel.h
+    src/gameconfig/GameConfigModel.cpp
+    src/gameconfig/GameConfigFiles.h
+    src/gameconfig/GameConfigFiles.cpp
+    # Focus switch: who has the keyboard, the hotkey (pure, unit-tested)
+    src/window/FocusSwitch.h
+    src/window/FocusSwitch.cpp
     # Game stats bar: pure model (unit-tested) and the reading per platform
     src/stats/StatsModel.h
     src/stats/StatsModel.cpp
@@ -115,6 +126,10 @@ set(WINDOW_MANAGER_SOURCES
     src/ui/HelixPanel.cpp
     src/ui/DisplayPanel.h
     src/ui/DisplayPanel.cpp
+    src/ui/GameConfigPanel.h
+    src/ui/GameConfigPanel.cpp
+    src/ui/FocusMonitor.h
+    src/ui/FocusMonitor.cpp
     src/ui/StatsBar.h
     src/ui/StatsBar.cpp
     src/ui/StatsMonitor.h
@@ -234,19 +249,25 @@ if(WINDOWMANAGER_BUILD_TESTS)
     add_wm_test(tst_gamewatch   src/window/GameWatchModel.cpp)
     add_wm_test(tst_supersample src/window/Supersample.cpp)
     add_wm_test(tst_steammatch  src/window/SteamMatch.cpp)
-    add_wm_test(tst_appconfig   src/config/AppConfig.cpp src/core/Logger.cpp src/display/DisplayModel.cpp)
+    add_wm_test(tst_focusswitch src/window/FocusSwitch.cpp)
+    # Game config: keys per file, folder layout, JConfig's file; the file writing against a fake game folder
+    add_wm_test(tst_gameconfig  src/gameconfig/GameConfigModel.cpp src/gameconfig/GameConfigFiles.cpp
+                                src/core/IniText.cpp src/core/Logger.cpp)
+    add_wm_test(tst_appconfig   src/config/AppConfig.cpp src/core/Logger.cpp src/display/DisplayModel.cpp
+                                src/gameconfig/GameConfigModel.cpp src/core/IniText.cpp)
     # WindowManager and MonitorHelper against a fake PlatformBackend (no real windows)
     add_wm_test(tst_windowmanager
                 src/window/WindowManager.cpp src/window/MonitorHelper.cpp
                 src/window/KillPlanner.cpp src/window/FitCalculator.cpp src/window/SteamMatch.cpp
                 src/platform/PlatformBackend.cpp
-                src/config/AppConfig.cpp src/core/Logger.cpp src/display/DisplayModel.cpp)
+                src/config/AppConfig.cpp src/core/Logger.cpp src/display/DisplayModel.cpp
+                src/gameconfig/GameConfigModel.cpp src/core/IniText.cpp)
     target_link_libraries(tst_windowmanager PRIVATE Qt${QT_VERSION_MAJOR}::Gui)
     # Steam library parsing, a fake Steam folder, and the sync into the saved games
     add_wm_test(tst_steamlibrary
                 src/window/SteamLibrary.cpp src/ui/GameRegistry.cpp
                 src/config/AppConfig.cpp src/core/Utilities.cpp src/core/Logger.cpp
-                src/display/DisplayModel.cpp)
+                src/display/DisplayModel.cpp src/gameconfig/GameConfigModel.cpp src/core/IniText.cpp)
     target_link_libraries(tst_steamlibrary PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
     if(UNIX AND NOT APPLE)
         # The real X11 backend against an xterm (skips itself without a display)
@@ -255,7 +276,7 @@ if(WINDOWMANAGER_BUILD_TESTS)
     endif()
     add_wm_test(tst_helix      src/helix/HelixRelease.cpp src/helix/HelixGame.cpp
                                 src/helix/HelixPaths.cpp src/helix/HelixSystem.cpp
-                                src/helix/HelixIni.cpp src/helix/SystemProbe.cpp)
+                                src/helix/HelixIni.cpp src/helix/SystemProbe.cpp src/core/IniText.cpp)
     if(WIN32)
         target_link_libraries(tst_helix PRIVATE d3d12 dxgi)   # SystemProbe asks the GPU driver
     endif()

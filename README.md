@@ -176,6 +176,27 @@ The scale goes through the same undocumented part of Windows that Settings uses;
 documented Windows functions. Windows only for now. Details:
 [Display settings help page](docs/help/display-settings.md).
 
+## Game config (Unreal Engine 4 games, Tekken 7)
+
+The **Game config** tab writes settings into the selected game's own config files on **Start** /
+**Restart**: the **render scale** (Unreal's `r.ScreenPercentage`: above 100 % the engine draws
+larger and scales down, a sharper picture in the same window; below 100 % it is faster), the
+**resolution** (engine settings, user settings, `r.setres`), and for Tekken 7's arcade builds
+**JConfig's window** (`monitor_misc.bin`), so the game stops putting its window back to 1280 x 720.
+For Unreal Engine 4 games with loose config files (`<Project>/Config/DefaultEngine.ini` next to
+`<Project>/Binaries/Win64`). Only those keys change; the first change keeps a copy of each file
+(`*.wm-original`), and **Restore originals** puts the game's own values back. Details:
+[Game config help page](docs/help/game-config.md).
+
+**Focus switch and terminate key.** While a game runs, the stats bar shows **Focus: game / app /
+other**. **F1** switches between the game and this app; **F2 pressed twice within 2 seconds**
+terminates the game like *Shutdown*. Both work from the game and are registered only while it runs.
+A game that grabs the focus straight back (Tekken 7 with JConfig) puts the app in **mouse only**: its
+buttons work with the mouse without taking the focus from the game. With one monitor, **View > Window
+opacity** makes the app see-through (90 % to 40 %, by default only while a game runs), so the game stays
+visible behind it. Change the keys under
+*View > Focus switch hotkey...* / *Terminate hotkey...*.
+
 ---
 
 ## Game stats bar
@@ -335,6 +356,9 @@ looks sharper without anything falling off the screen; see
 **Display** - the PC's display settings, and the selected game's own settings while it runs; see
 [Display settings](#display-settings).
 
+**Game config** - the selected game's own config files (render scale, resolution, JConfig's window for
+Tekken 7); see [Game config](#game-config-unreal-engine-4-games-tekken-7).
+
 **GPU & Power** - the PC's graphics cards and their drivers (with an update check for NVIDIA), the card the
 running game renders on, Windows' graphics setting for the game (Let Windows decide / Power saving / High
 performance), the power plan and the power mode; see [Game stats bar](#game-stats-bar).
@@ -349,7 +373,7 @@ see [HelixSR](#helixsr-fsr-31-upscaler-for-amd-gpus).
 | Menu | Items |
 |---|---|
 | **File** | Add game..., Find Steam games, Open config file, View logs..., Exit |
-| **View** | Always on top, Confirm before terminating a game, Check window fit after launching a game, Fit window to monitor..., Game stats bar, Keep this app off the game's monitor, Release the mouse, Minimize to floating bar, Switch to floating bar, Stop downscaled view, Move this app to the other monitor |
+| **View** | Always on top, Window opacity, Confirm before terminating a game, Check window fit after launching a game, Fit window to monitor..., Game stats bar, Keep this app off the game's monitor, Release the mouse, Switch focus: game / this app, Focus switch hotkey..., Terminate the game (press twice), Terminate hotkey..., Minimize to floating bar, Switch to floating bar, Stop downscaled view, Move this app to the other monitor |
 | **Help** | Help topics (F1), Keyboard shortcuts, Logs and troubleshooting, About |
 
 ---
@@ -365,8 +389,9 @@ see [HelixSR](#helixsr-fsr-31-upscaler-for-amd-gpus).
 | Ctrl+M | Move this app's window to the other monitor |
 | Ctrl+B | Switch to the floating bar |
 | Ctrl+O | Add game... |
-| F1 | Help |
+| F1 | Help. While a game runs: switch the focus between the game and this app (global; *View > Focus switch hotkey...*) |
 | Ctrl+L | View logs... |
+| F2, twice | While a game runs: terminate it, like Shutdown (global; *View > Terminate hotkey...*) |
 | Ctrl+Q | Exit |
 
 ---
@@ -377,8 +402,8 @@ All next to `WindowManager.exe`:
 
 | File | Contents |
 |---|---|
-| `windowmanager.json` | Saved games (with each game's display settings), the last target and per-game window profiles. Written atomically. |
-| `windowmanager.ini` | App window size/position, Always on top, the terminate-confirmation preference, the automatic fit check on/off, the game stats bar shown or hidden, and the floating bar (on / off, position). While a game's display settings are on, also how to undo them. |
+| `windowmanager.json` | Saved games (with each game's display settings and game config), the last target and per-game window profiles. Written atomically. |
+| `windowmanager.ini` | App window size/position, Always on top, the terminate-confirmation preference, the automatic fit check on/off, the game stats bar shown or hidden, the floating bar (on / off, position), the window opacity and the focus switch and terminate hotkeys. While a game's display settings are on, also how to undo them. |
 | `windowmanager.log`, `windowmanager_old.log` | Rolling application log (the old one is the previous file after rotation). |
 | `logs/<game>.log`, `logs/<game>_old.log` | Rolling log per game. View all logs in the app with **File > View logs...** (Ctrl+L). |
 | `snapshots/<game id>/` | Screenshots from the Capture tab. |
@@ -398,6 +423,8 @@ All next to `WindowManager.exe`:
   (`explorer.exe`, `cmd.exe`, browsers, ...) are never terminated.
 - The tool changes window styles and positions of other programs. **Reset All** and the
   **Windowed** button undo borderless changes.
+- The **Game config** tab edits the game's own config files. Before the first change it keeps a copy
+  of each (`<file>.wm-original`, next to it); **Restore originals** puts the game's values back.
 - A new resolution, orientation or display arrangement from the **Display** tab is undone after
   15 seconds unless you confirm it. A game's display settings are undone when it closes (or at the
   next start, if the app crashed).

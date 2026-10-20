@@ -98,15 +98,32 @@ The desktop is KDE Plasma on Wayland. The X11 backend only sees XWayland windows
 
 ## Where we left off (2026-10-20)
 
-Open work, in this order. Windows: 12 tests, Linux (WSL): 13 tests, all passing; nothing committed by Claude.
+Open work, in this order. Windows: 14 tests, Linux (WSL): 15 tests, all passing; nothing committed by Claude.
 
-1. **Tekken 7 retest by the user.** Tekken here is the arcade build (TEKKEN 7 Fated Retribution R2) started through
-   **JConfig**; its *DX Window Mode* fields (resolution 1280x720, window 1280x720 at 16,16) reset the window on
-   every focus. Advised: set them to the monitor (1920x1080 at 0,0; monitor 2 is at 0,-1080), or a higher DX
-   resolution with a 1920x1080 window to supersample. Then check in `logs/TEKKEN7FRR2.log`: `Watch` lines (no more
-   1280x720 resets), `ScaledView layout` (overlay = monitor), Ctrl+Alt+M with the mouse held, FPS in the stats bar
-   (the user is in Performance Log Users since 2026-10-20; not seen working yet), the app moving off the game's
-   monitor, one instance only.
+1. **Tekken 7 test by the user, with the new Game config tab and focus switch** (built 2026-10-20). Tekken here is
+   the arcade build (TEKKEN 7 Fated Retribution R2, `.../TEKKEN_7_FATED_RETRIBUTION_ROUND_2`) started through
+   **JConfig**. Findings: no `Saved/` folder, so the game reads the loose `TekkenGame/Config/Default*.ini` and
+   `Engine/Config/**`; `Engine/Config/Windows/WindowsEngine.ini` has `r.setres=1280x720`; JConfig keeps its
+   settings in `Binaries/Win64/monitor_misc.bin` (244 bytes, int32: 60/64 window pos, 68/72 window size,
+   76/80 DX resolution; confirmed by the user, whose JConfig showed window 1280x720 at 16,16 and DX 1920x1080).
+   In window mode the window follows the DX resolution, so in-engine supersampling = `r.ScreenPercentage`.
+   **Checked in a scratch copy only** (fake Tekken folder with copies of the user's files, charmap as the game):
+   Write now / Restore originals (files back byte for byte, copies removed), config written on Start before the
+   launch, F1 game -> app -> game with the label following.
+   **Focus (2026-10-20, user's first Tekken run):** F1 brought the app up for a moment, then Tekken took the
+   foreground back (the watch did not even log it). Reproduced with a test program that attaches to the foreground
+   thread's input (scratch `stealer.exe`): it gets past `LockSetForegroundWindow` and past `EnableWindow(FALSE)` on
+   its window. Now: F1 locks the foreground, checks after 0.5 s and logs who took it; if taken back, the app goes
+   **mouse only** (`WS_EX_NOACTIVATE`): real clicks on its buttons work while the stealer keeps the foreground
+   (checked). **F2 twice within 2 s** terminates the game (checked with the stealer). The fit-check box after Start
+   is modal and blocks clicks on the main window: close it first. **View > Window opacity** (100-40 %, by default
+   only while a game runs) for one monitor: checked in the scratch copy (layered alpha 60 % while the stand-in ran,
+   solid before and after). Fixed: the fit check turned off came back on at every start. **Not tried yet with Tekken:** mouse-only clicks,
+   F2, whether the game reads
+   the edited files (render scale 50 % is the visible test), whether the JConfig window stops the 1280x720
+   resets, F1 while Tekken holds the focus (JConfig's input emulator might swallow keys), and from the earlier
+   list: Ctrl+Alt+M with the mouse held, FPS in the stats bar (Performance Log Users), one instance only.
+   Suggested settings: Resolution 1920 x 1080, JConfig window *Monitor 2* (0,-1080), Render scale 150 %.
 2. **Game session reports** (decided with the user): a **tab first** (a separate window maybe later); per session
    one **JSON** (`reports/<game>/<date-time>.json`, `schemaVersion`), a row in **`reports/sessions.csv`**, and a
    **per-second samples CSV** (for charts later); "where it was played" is a **label the user chooses** (no PC
@@ -117,10 +134,11 @@ Open work, in this order. Windows: 12 tests, Linux (WSL): 13 tests, all passing;
    with timestamps. **No private data:** no user names or paths with the user folder, no PC name, IP, MAC or
    monitor serials. Phases: (1) recorder + files, pure parts tested; (2) the tab (list, details); (3) compare two
    sessions + a self-drawn FPS chart (no Qt Charts).
-3. **Global hotkeys like in Nexus** (the app this one came from): the user wants hotkeys that work while the game
-   has the focus, for Focus and others. Only Ctrl+Alt+D and Ctrl+Alt+M are global now. Ask the user which ones.
-4. Maybe: offer Unreal Engine's own supersampling (`r.ScreenPercentage` in `Engine.ini`) instead of the downscaled
-   view for UE games.
+3. **More global hotkeys** only if the user asks: the user chose a focus switch (F1, done). Tekken keeps the focus,
+   so the app's commands can't be reached while it runs (in Nexus it was the reverse: a button gave the focus back
+   to the game, which ignores the controller without it).
+4. **Game config for more games**: other UE4 games with loose config; packed / user-folder configs
+   (`%LOCALAPPDATA%/<Project>/Saved/Config/WindowsNoEditor/*.ini`) are not handled yet.
 5. **Linux** on the Bazzite machine: docs/LINUX_PORT.md, *Next steps* (stats backend, floating bar under KWin,
    AppImage).
 

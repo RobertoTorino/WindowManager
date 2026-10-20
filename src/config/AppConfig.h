@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../display/DisplayModel.h"
+#include "../gameconfig/GameConfigModel.h"
 
 #include <optional>
 #include <QHash>
@@ -34,6 +35,7 @@ public:
         QString childExePath;            // .bat/.cmd games: the game exe the script started last time
         quint32 steamAppId{0};           // found in a Steam library: started through Steam; 0 = not
         DisplayModel::GameSettings display;   // display settings while the game runs (Display tab)
+        GameConfig::Settings gameConfig;      // written into the game's config files on Start (Game config tab)
     };
 
     struct WindowProfile

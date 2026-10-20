@@ -85,6 +85,7 @@ bool AppConfig::load()
         game.childExePath    = obj["ChildExePath"].toString();
         game.steamAppId      = static_cast<quint32>(obj["SteamAppId"].toInteger(0));
         game.display         = DisplayModel::gameSettingsFromJson(obj["Display"].toObject());
+        game.gameConfig      = GameConfig::settingsFromJson(obj["GameConfig"].toObject());
         m_games.insert(path, game);
     }
 
@@ -128,6 +129,8 @@ bool AppConfig::save()
             obj["SteamAppId"]  = static_cast<qint64>(it.value().steamAppId);
         if (it.value().display.enabled || !it.value().display.isEmpty())
             obj["Display"]     = DisplayModel::toJson(it.value().display);
+        if (it.value().gameConfig.enabled || !it.value().gameConfig.isEmpty())
+            obj["GameConfig"]  = GameConfig::toJson(it.value().gameConfig);
         games.append(obj);
     }
 

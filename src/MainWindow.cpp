@@ -5,10 +5,14 @@
 #include "core/BuildInfo.h"
 #include "core/Logger.h"
 #include "display/DisplaySession.h"
+#include "gameconfig/GameConfigFiles.h"
+#include "platform/PlatformBackend.h"
 #include "stats/StatsBackend.h"
 #include "ui/ControlPanels.h"
 #include "ui/DisplayPanel.h"
 #include "ui/FitDialog.h"
+#include "ui/FocusMonitor.h"
+#include "ui/GameConfigPanel.h"
 #include "ui/GameBar.h"
 #include "ui/GpuPanel.h"
 #include "ui/ScaledView.h"
@@ -29,14 +33,17 @@
 #include <algorithm>
 
 #include <QAction>
+#include <QActionGroup>
 #include <QCheckBox>
 #include <QCloseEvent>
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDesktopServices>
 #include <QFileDialog>
 #include <QGuiApplication>
 #include <QFileInfo>
 #include <QHBoxLayout>
+#include <QInputDialog>
 #include <QIcon>
 #include <QLabel>
 #include <QMenuBar>
@@ -63,6 +70,8 @@ namespace {
 
 constexpr int kStopViewHotkey = 1;
 constexpr int kReleaseMouseHotkey = 2;
+constexpr int kFocusSwitchHotkey = 3;   // these two are registered only while a game is found
+constexpr int kKillHotkey = 4;
 
 QSettings uiSettings()
 {
@@ -161,13 +170,27 @@ MainWindow::MainWindow(QWidget *parent)
     QSettings settings = uiSettings();
     restoreGeometry(settings.value("geometry").toByteArray());
     setAlwaysOnTop(settings.value("alwaysOnTop", true).toBool());
+    {
+        const int percent = settings.value("opacity", 100).toInt();
+        for (QAction *level : m_opacityGroup->actions())
+            level->setChecked(level->data().toInt() == percent);
+        if (!m_opacityGroup->checkedAction())
+            m_opacityGroup->actions().constFirst()->setChecked(true);
+        m_opacityGameOnlyAction->setChecked(settings.value("opacityGameOnly", true).toBool());
+        applyOpacity();
+    }
     m_onTopAction->setChecked(windowFlags().testFlag(Qt::WindowStaysOnTopHint));
     m_confirmKill = settings.value("confirmKill", true).toBool();
     m_confirmKillAction->setChecked(m_confirmKill);
-    m_fitCheckAction->setChecked(settings.value("fitCheck", true).toBool());
+    // set the controller too: the action starts unchecked, so "off" alone would not emit toggled
+    m_controller->setFitCheckEnabled(settings.value("fitCheck", true).toBool());
+    m_fitCheckAction->setChecked(m_controller->fitCheckEnabled());
     if (m_statsBar)
         m_statsBar->setVisible(settings.value("statsBar", true).toBool());
     m_miniOnMinimizeAction->setChecked(settings.value("miniBar", true).toBool());
+    m_focusHotkey = settings.value("focusHotkey", "F1").toString();
+    m_killHotkey = settings.value("killHotkey", "F2").toString();
+    updateFocusSwitch();
     m_avoidGameMonitorAction->setChecked(settings.value("avoidGameMonitor", true).toBool());
     if (settings.contains("miniBarPos")) {
         m_mini->move(settings.value("miniBarPos").toPoint());
@@ -191,6 +214,10 @@ MainWindow::~MainWindow()
 #ifdef Q_OS_WIN
     UnregisterHotKey(reinterpret_cast<HWND>(winId()), kStopViewHotkey);
     UnregisterHotKey(reinterpret_cast<HWND>(winId()), kReleaseMouseHotkey);
+    if (m_focusHotkeyRegistered)
+        UnregisterHotKey(reinterpret_cast<HWND>(winId()), kFocusSwitchHotkey);
+    if (m_killHotkeyRegistered)
+        UnregisterHotKey(reinterpret_cast<HWND>(winId()), kKillHotkey);
 #endif
 }
 
@@ -206,6 +233,16 @@ bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr
     }
     if (msg->message == WM_HOTKEY && msg->wParam == kReleaseMouseHotkey) {
         releaseMouse();
+        *result = 0;
+        return true;
+    }
+    if (msg->message == WM_HOTKEY && msg->wParam == kFocusSwitchHotkey) {
+        switchFocus();   // a hotkey lets this app take the foreground
+        *result = 0;
+        return true;
+    }
+    if (msg->message == WM_HOTKEY && msg->wParam == kKillHotkey) {
+        killFromHotkey();
         *result = 0;
         return true;
     }
@@ -242,6 +279,9 @@ void MainWindow::buildUi()
     m_tabs->addTab(presets,  "Presets");
     m_tabs->addTab(downscale, "Downscale");
     m_tabs->addTab(display,  "Display");
+    auto *gameConfig = new GameConfigPanel(m_controller, m_tabs);
+    connect(gameConfig, &GameConfigPanel::message, this, [this](const QString &text) { m_detailLabel->setText(text); });
+    m_tabs->addTab(gameConfig, "Game config");
     auto *gpu = new GpuPanel(m_controller, m_tabs);
     connect(gpu, &GpuPanel::message, this, [this](const QString &text) { m_detailLabel->setText(text); });
     connect(gpu, &GpuPanel::restartRequested, this, &MainWindow::restartSelectedGame);
@@ -249,7 +289,7 @@ void MainWindow::buildUi()
     m_tabs->addTab(capture,  "Capture");
     m_helix = new HelixPanel(m_controller, m_tabs);
     m_tabs->addTab(m_helix,  "HelixSR");
-    m_panels = {state, position, presets, downscale, display, gpu, capture, m_helix};
+    m_panels = {state, position, presets, downscale, display, gameConfig, gpu, capture, m_helix};
 
     // QTabWidget sizes itself to its tallest page, which leaves blank space under
     // shorter ones. Cap its height to tab bar + current page instead; the window
@@ -306,8 +346,13 @@ void MainWindow::buildUi()
     m_targetLabel = new QLabel(this);
     m_targetLabel->setObjectName("hint");
     statusBar()->setSizeGripEnabled(true);
+    m_focusLabel = new QLabel(this);
     statusBar()->addWidget(m_detailLabel, 1);
     statusBar()->addPermanentWidget(m_targetLabel);
+
+    // Who has the keyboard while a game runs; the focus-switch hotkey follows it
+    m_focus = new FocusMonitor(m_controller, this);
+    connect(m_focus, &FocusMonitor::ownerChanged, this, &MainWindow::updateFocusSwitch);
 
     // Second bar above the status bar: the running game's FPS, CPU, GPU, memory and power state
     if (StatsBar::available()) {
@@ -326,6 +371,13 @@ void MainWindow::buildUi()
             m_watch = new GameWatch(this);
             connect(m_monitor, &StatsMonitor::gameChanged, m_watch, &GameWatch::watch);
         }
+    }
+    // "Focus: game / app" at the end of the stats bar (the upper bar), else in the status bar
+    if (m_statsBar) {
+        m_focusLabel->setContentsMargins(12, 0, 4, 0);
+        m_statsBar->addWidget(m_focusLabel);
+    } else {
+        statusBar()->insertPermanentWidget(0, m_focusLabel);
     }
 
     // The floating bar the app minimizes to
@@ -396,6 +448,20 @@ void MainWindow::buildMenus()
     m_onTopAction = view->addAction("Always on &top");
     m_onTopAction->setCheckable(true);
     connect(m_onTopAction, &QAction::toggled, this, &MainWindow::setAlwaysOnTop);
+    // See-through window: use the app over the game on a single monitor
+    auto *opacity = view->addMenu("Window &opacity");
+    m_opacityGroup = new QActionGroup(this);
+    for (int percent : {100, 90, 80, 70, 60, 50, 40}) {
+        QAction *level = opacity->addAction(percent == 100 ? QString("100 % (solid)") : QString("%1 %").arg(percent));
+        level->setCheckable(true);
+        level->setData(percent);
+        m_opacityGroup->addAction(level);
+    }
+    opacity->addSeparator();
+    m_opacityGameOnlyAction = opacity->addAction("Only while a game runs");
+    m_opacityGameOnlyAction->setCheckable(true);
+    connect(m_opacityGroup, &QActionGroup::triggered, this, &MainWindow::applyOpacity);
+    connect(m_opacityGameOnlyAction, &QAction::toggled, this, &MainWindow::applyOpacity);
     m_confirmKillAction = view->addAction("&Confirm before terminating a game");
     m_confirmKillAction->setCheckable(true);
     connect(m_confirmKillAction, &QAction::toggled, this, [this](bool on) { m_confirmKill = on; });
@@ -416,6 +482,10 @@ void MainWindow::buildMenus()
             m_keepOffTimer->start();
     });
     view->addAction("Release the mouse\tCtrl+Alt+M", this, &MainWindow::releaseMouse);
+    m_switchFocusAction = view->addAction("Switch focus: game / this app", this, &MainWindow::switchFocus);
+    view->addAction("Focus switch &hotkey...", this, [this]() { chooseGameHotkey(false); });
+    m_killHotkeyAction = view->addAction("Terminate the game (press twice)", this, &MainWindow::killFromHotkey);
+    view->addAction("Terminate &hotkey...", this, [this]() { chooseGameHotkey(true); });
     m_miniOnMinimizeAction = view->addAction("Minimize to &floating bar");
     m_miniOnMinimizeAction->setCheckable(true);
     view->addAction("Switch to floating &bar", QKeySequence(Qt::CTRL | Qt::Key_B), this, &MainWindow::showMiniBar);
@@ -595,6 +665,12 @@ void MainWindow::launchGame(const QString &exePath)
 void MainWindow::launchWhenFree(const QString &exePath)
 {
     const auto launch = [this, exePath]() {
+        // The game reads its config files at start-up (Game config tab)
+        if (const auto game = AppConfig::instance().gameByPath(exePath); game && game->gameConfig.enabled) {
+            QString text;
+            if (!GameConfig::apply(GameConfig::exeForConfig(exePath, game->childExePath), game->gameConfig, &text))
+                Logger::instance().warn("Game config not written: " + text.toStdString(), "MainWindow");
+        }
         m_display->gameStarting(exePath);
         if (!m_controller->launchTarget())
             m_display->restore("the launch failed");
@@ -753,6 +829,221 @@ void MainWindow::releaseMouse()
     m_detailLabel->setText("Mouse released. Click the game to give it the mouse back.");
 }
 
+// What has the foreground, for the log: "TekkenGame-Win64-Shipping.exe (pid 5960) 'TekkenGame (64-bit, PCD3D_SM5)'"
+QString MainWindow::foregroundText() const
+{
+    PlatformBackend &os = platform();
+    const quintptr window = os.foregroundWindow();
+    if (!window)
+        return "nothing";
+    const qint64 pid = os.windowPid(window);
+    const QString exe = QFileInfo(os.processImagePath(pid)).fileName();
+    return QString("%1 (pid %2) '%3'").arg(exe.isEmpty() ? QString("?") : exe).arg(pid).arg(os.windowTitle(window));
+}
+
+// Brings this window to the front and asks Windows to keep it there (LockSetForegroundWindow: other
+// programs' SetForegroundWindow fails until the user clicks another window or presses Alt). A game that
+// attaches to the foreground's input gets past that; switchFocus notices and turns on the mouse-only mode.
+void MainWindow::takeForeground()
+{
+    bringToFront();
+#ifdef Q_OS_WIN
+    const HWND self = reinterpret_cast<HWND>(winId());
+    if (GetForegroundWindow() != self) {
+        // Windows refused: attach to the foreground window's input for a moment, which lets the call through
+        const DWORD foregroundThread = GetWindowThreadProcessId(GetForegroundWindow(), nullptr);
+        const DWORD thisThread = GetCurrentThreadId();
+        const bool attached = foregroundThread && foregroundThread != thisThread
+                              && AttachThreadInput(thisThread, foregroundThread, TRUE);
+        BringWindowToTop(self);
+        SetForegroundWindow(self);
+        if (attached)
+            AttachThreadInput(thisThread, foregroundThread, FALSE);
+    }
+    DWORD foregroundPid = 0;   // this app's window, or one of its dialogs (the fit check)
+    GetWindowThreadProcessId(GetForegroundWindow(), &foregroundPid);
+    if (foregroundPid == GetCurrentProcessId())
+        m_foregroundLocked = LockSetForegroundWindow(LSFW_LOCK);
+#endif
+}
+
+void MainWindow::releaseForeground()
+{
+#ifdef Q_OS_WIN
+    if (m_foregroundLocked)
+        LockSetForegroundWindow(LSFW_UNLOCK);
+#endif
+    m_foregroundLocked = false;
+}
+
+// Mouse-only: this window no longer takes the foreground when clicked (WS_EX_NOACTIVATE, like the floating
+// bar), so a game that takes the foreground back keeps it and there is no tug of war: buttons and lists work
+// with the mouse, typing does not. On when the game took the foreground back after a focus switch; off when
+// the game closes.
+void MainWindow::setMouseOnly(bool on)
+{
+    if (m_mouseOnly == on)
+        return;
+    m_mouseOnly = on;
+#ifdef Q_OS_WIN
+    const HWND self = reinterpret_cast<HWND>(winId());
+    const LONG_PTR style = GetWindowLongPtr(self, GWL_EXSTYLE);
+    SetWindowLongPtr(self, GWL_EXSTYLE, on ? style | WS_EX_NOACTIVATE : style & ~LONG_PTR(WS_EX_NOACTIVATE));
+#endif
+    Logger::instance().info(on ? "Mouse-only mode on: the game keeps the focus, this app works with the mouse"
+                               : "Mouse-only mode off: this app takes the focus again when clicked",
+                            "MainWindow");
+    updateFocusSwitch();
+}
+
+void MainWindow::switchFocus()
+{
+    const QString before = foregroundText();
+    switch (FocusSwitch::toggle(m_focus->owner())) {
+    case FocusSwitch::Action::ShowApp: {
+        takeForeground();
+        Logger::instance().info(QString("Focus switch: game -> this app (the foreground was %1; %2)")
+                                    .arg(before, m_foregroundLocked ? "locked to this app"
+                                                                    : "could not lock it to this app")
+                                    .toStdString(), "MainWindow");
+        // Did it stay? A game that takes the foreground back shows up here.
+        QTimer::singleShot(500, this, [this]() {
+            const bool inFront = platform().windowPid(platform().foregroundWindow()) == platform().currentPid();
+            Logger::instance().info(inFront ? std::string("Focus switch: this app is still in front after 0.5 s")
+                                            : ("Focus switch: the foreground went back to " + foregroundText()
+                                               + " within 0.5 s").toStdString(),
+                                    "MainWindow");
+            if (!inFront) {
+                releaseForeground();
+                setMouseOnly(true);
+                m_detailLabel->setText("The game takes the focus back: use this app with the mouse, the game keeps "
+                                       "the keyboard and controller.");
+            }
+        });
+        break;
+    }
+    case FocusSwitch::Action::FocusGame:
+        releaseForeground();
+        m_controller->focusTarget();
+        Logger::instance().info(QString("Focus switch: -> the game (the foreground was %1, now %2)")
+                                    .arg(before, foregroundText()).toStdString(), "MainWindow");
+        break;
+    case FocusSwitch::Action::None:
+        m_detailLabel->setText("No running game found to switch to.");
+        break;
+    }
+}
+
+// The terminate hotkey: twice within 2 s, like the Shutdown button without its confirmation box (which
+// cannot be answered while the game keeps the focus).
+void MainWindow::killFromHotkey()
+{
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const QString key = FocusSwitch::parseHotkey(m_killHotkey) ? FocusSwitch::hotkeyText(*FocusSwitch::parseHotkey(m_killHotkey))
+                                                               : m_killHotkey;
+    if (!m_killPress.press(now)) {
+#ifdef Q_OS_WIN
+        MessageBeep(MB_ICONWARNING);
+#endif
+        Logger::instance().info(QString("Terminate hotkey %1 pressed once: press it again within 2 s to terminate the game")
+                                    .arg(key).toStdString(), "MainWindow");
+        m_detailLabel->setText(QString("Press %1 again within 2 seconds to terminate the game.").arg(key));
+        return;
+    }
+    Logger::instance().info(QString("Terminate hotkey %1 pressed twice: terminating the game").arg(key).toStdString(),
+                            "MainWindow");
+    releaseForeground();
+    m_controller->killTarget();
+}
+
+void MainWindow::updateFocusSwitch()
+{
+    const FocusSwitch::Owner owner = m_focus->owner();
+    if (owner == FocusSwitch::Owner::None)
+        setMouseOnly(false);   // the game closed
+    applyOpacity();            // "only while a game runs" follows the game
+    if (owner != FocusSwitch::Owner::App && m_foregroundLocked) {
+        Logger::instance().info(("Focus: this app lost the foreground to " + foregroundText()).toStdString(),
+                                "MainWindow");
+        releaseForeground();
+    }
+    // Only while a game runs: a global F1 / F2 would take the keys from every other program.
+    const bool gameFound = owner != FocusSwitch::Owner::None;
+    syncHotkey(kFocusSwitchHotkey, m_focusHotkey, gameFound, m_focusHotkeyRegistered);
+    syncHotkey(kKillHotkey, m_killHotkey, gameFound, m_killHotkeyRegistered);
+
+    const auto focusKey = FocusSwitch::parseHotkey(m_focusHotkey);
+    const auto killKey = FocusSwitch::parseHotkey(m_killHotkey);
+    QStringList keys;
+    if (m_focusHotkeyRegistered)
+        keys << QString("%1 switches").arg(FocusSwitch::hotkeyText(*focusKey));
+    if (m_killHotkeyRegistered)
+        keys << QString("%1 2x ends the game").arg(FocusSwitch::hotkeyText(*killKey));
+    QString text = FocusSwitch::label(owner);
+    if (!text.isEmpty() && m_mouseOnly)
+        keys.prepend("this app: mouse only");
+    if (!text.isEmpty() && !keys.isEmpty())
+        text += QString("  (%1)").arg(keys.join(", "));
+    m_focusLabel->setText(text);
+    const bool taken = gameFound && ((focusKey && !m_focusHotkeyRegistered) || (killKey && !m_killHotkeyRegistered));
+    m_focusLabel->setToolTip(taken ? QString("A hotkey could not be registered (another program has it): see the log")
+                                   : QString("Who has the keyboard: the game, this app or another program"));
+    m_switchFocusAction->setText(focusKey ? QString("Switch focus: game / this app\t%1").arg(FocusSwitch::hotkeyText(*focusKey))
+                                          : QString("Switch focus: game / this app"));
+    m_killHotkeyAction->setText(killKey ? QString("Terminate the game (press twice)\t%1").arg(FocusSwitch::hotkeyText(*killKey))
+                                        : QString("Terminate the game (press twice)"));
+}
+
+// Registers `text` under `id` while `wanted`, unregisters it otherwise.
+void MainWindow::syncHotkey(int id, const QString &text, bool wanted, bool &registered)
+{
+    const auto key = FocusSwitch::parseHotkey(text);
+    wanted = wanted && key.has_value();
+#ifdef Q_OS_WIN
+    if (wanted && !registered) {
+        const UINT modifiers = (key->ctrl ? MOD_CONTROL : 0) | (key->alt ? MOD_ALT : 0)
+                             | (key->shift ? MOD_SHIFT : 0) | (key->win ? MOD_WIN : 0) | MOD_NOREPEAT;
+        registered = RegisterHotKey(reinterpret_cast<HWND>(winId()), id, modifiers, UINT(key->virtualKey));
+        if (!registered)
+            Logger::instance().warn(QString("Hotkey %1 is taken by another program").arg(text).toStdString(),
+                                    "MainWindow");
+    } else if (!wanted && registered) {
+        UnregisterHotKey(reinterpret_cast<HWND>(winId()), id);
+        registered = false;
+    }
+#else
+    Q_UNUSED(id);
+    registered = false;
+#endif
+}
+
+void MainWindow::chooseGameHotkey(bool kill)
+{
+    QString &setting = kill ? m_killHotkey : m_focusHotkey;
+    const QString title = kill ? "Terminate hotkey" : "Focus switch hotkey";
+    bool ok = false;
+    const QString text = QInputDialog::getText(
+        this, title,
+        kill ? QString("Key that terminates the game while it runs, pressed twice within 2 seconds\n"
+                       "(like Shutdown; it works while the game has the focus). Examples: F2, Ctrl+Alt+K. Empty: off.")
+             : QString("Key that switches the keyboard between the game and this app while a game runs\n"
+                       "(it works while the game has the focus). Examples: F1, Ctrl+Alt+G, Pause. Empty: off."),
+        QLineEdit::Normal, setting, &ok);
+    if (!ok)
+        return;
+    const QString trimmed = text.trimmed();
+    const auto key = FocusSwitch::parseHotkey(trimmed);
+    if (!trimmed.isEmpty() && !key) {
+        QMessageBox::warning(this, title, QString("\"%1\" is not a key this app knows.").arg(trimmed));
+        return;
+    }
+    // registered again with the new key
+    syncHotkey(kFocusSwitchHotkey, m_focusHotkey, false, m_focusHotkeyRegistered);
+    syncHotkey(kKillHotkey, m_killHotkey, false, m_killHotkeyRegistered);
+    setting = key ? FocusSwitch::hotkeyText(*key) : QString();
+    updateFocusSwitch();
+}
+
 void MainWindow::moveAppToOppositeMonitor()
 {
     const int gameMonitor = gameMonitorIndex(); // 0 = unknown
@@ -770,6 +1061,19 @@ void MainWindow::moveAppToOppositeMonitor()
         }
     }
     move(target->x + 40, target->y + 40);
+}
+
+// View > Window opacity: the whole window see-through, so it can sit over the game on a single monitor
+// (with Always on top; mouse-only keeps the game's focus while you click it). Dialogs stay solid.
+void MainWindow::applyOpacity()
+{
+    const QAction *level = m_opacityGroup ? m_opacityGroup->checkedAction() : nullptr;
+    int percent = level ? level->data().toInt() : 100;
+    if (m_opacityGameOnlyAction && m_opacityGameOnlyAction->isChecked()
+        && (!m_focus || m_focus->owner() == FocusSwitch::Owner::None))
+        percent = 100;
+    if (qRound(windowOpacity() * 100) != percent)
+        setWindowOpacity(percent / 100.0);
 }
 
 void MainWindow::setAlwaysOnTop(bool onTop)
@@ -823,16 +1127,22 @@ void MainWindow::updateStatsMonitor()
 void MainWindow::closeEvent(QCloseEvent *event)
 {
     m_view->stop(); // give the game its window back
+    releaseForeground();
     m_display->restore("WindowManager closed");
     QSettings settings = uiSettings();
     settings.setValue("geometry", saveGeometry());
     settings.setValue("alwaysOnTop", windowFlags().testFlag(Qt::WindowStaysOnTopHint));
+    if (const QAction *level = m_opacityGroup->checkedAction())
+        settings.setValue("opacity", level->data().toInt());
+    settings.setValue("opacityGameOnly", m_opacityGameOnlyAction->isChecked());
     settings.setValue("confirmKill", m_confirmKill);
     settings.setValue("fitCheck", m_controller->fitCheckEnabled());
     if (m_statsBar)
         settings.setValue("statsBar", !m_statsBar->isHidden());   // this window may be hidden (floating bar)
     settings.setValue("miniBar", m_miniOnMinimizeAction->isChecked());
     settings.setValue("avoidGameMonitor", m_avoidGameMonitorAction->isChecked());
+    settings.setValue("focusHotkey", m_focusHotkey);
+    settings.setValue("killHotkey", m_killHotkey);
     if (m_miniPlaced)
         settings.setValue("miniBarPos", m_mini->pos());
     m_mini->hide();

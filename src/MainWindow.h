@@ -3,12 +3,16 @@
 #include <QList>
 #include <QMainWindow>
 
+#include "window/FocusSwitch.h"
+
 class ControlPanel;
 class DisplaySession;
+class FocusMonitor;
 class GameWatch;
 class GameBar;
 class HelixPanel;
 class QAction;
+class QActionGroup;
 class QCloseEvent;
 class ScaledView;
 class QLabel;
@@ -66,10 +70,20 @@ private:
     void toggleGameMonitor();
     void moveAppToOppositeMonitor();
     void setAlwaysOnTop(bool onTop);
+    void applyOpacity();               // View > Window opacity (and only while a game runs)
     void showMiniBar();
     void restoreFromMiniBar();
     void updateStatsMonitor();
     void releaseMouse();
+    void switchFocus();                // the focus-switch hotkey: game -> this app, else -> the game
+    void takeForeground();             // to the front, and locked there against the game taking it back
+    void releaseForeground();
+    void setMouseOnly(bool on);        // while a game keeps taking the foreground back
+    QString foregroundText() const;    // for the log
+    void killFromHotkey();             // the terminate hotkey, pressed twice
+    void updateFocusSwitch();          // label + the game hotkeys, registered only while a game is found
+    void syncHotkey(int id, const QString &text, bool wanted, bool &registered);
+    void chooseGameHotkey(bool kill);
     int  gameMonitorIndex() const;   // the downscaled view's monitor, else the game window's; 0: unknown
     void keepOffGameMonitor();
 
@@ -88,6 +102,17 @@ private:
     StatsMonitor *m_monitor{nullptr};   // null when the platform has no stats backend
     MiniBar     *m_mini{nullptr};       // a window of its own, deleted with this one
     GameWatch   *m_watch{nullptr};      // diagnostic log of the game's windows, focus and mouse
+    FocusMonitor *m_focus{nullptr};     // who has the keyboard: the game, this app or another program
+    QLabel      *m_focusLabel{nullptr};
+    QAction     *m_switchFocusAction{nullptr};
+    QString      m_focusHotkey{"F1"};   // empty: off
+    bool         m_focusHotkeyRegistered{false};
+    QString      m_killHotkey{"F2"};    // terminates the game when pressed twice; empty: off
+    bool         m_killHotkeyRegistered{false};
+    QAction     *m_killHotkeyAction{nullptr};
+    FocusSwitch::DoublePress m_killPress;
+    bool         m_foregroundLocked{false};   // LockSetForegroundWindow is on (this app took the foreground)
+    bool         m_mouseOnly{false};          // this window does not take the foreground (the game keeps it)
     QAction     *m_miniOnMinimizeAction{nullptr};
     bool         m_miniPlaced{false};   // has a position (saved, or shown before)
     QAction     *m_avoidGameMonitorAction{nullptr};
@@ -101,6 +126,8 @@ private:
     QLabel  *m_detailLabel{nullptr};
     QLabel  *m_targetLabel{nullptr};
     QAction *m_onTopAction{nullptr};
+    QActionGroup *m_opacityGroup{nullptr};       // 100 % ... 40 %
+    QAction *m_opacityGameOnlyAction{nullptr};
     QAction *m_confirmKillAction{nullptr};
     QAction *m_fitCheckAction{nullptr};
     bool     m_fitDialogOpen{false};

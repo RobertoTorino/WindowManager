@@ -9,6 +9,7 @@ src/
   core/Logger.*                 Thread-safe rolling file logger (app log + one log per game)
   core/BuildInfo.h              Window title / About text: version, build number, date (from build_stamp.h)
   core/Utilities.*              String / path / timestamp helpers
+  core/IniText.*                Pure logic: read / edit ini text in place (helixsr.ini, Unreal config files)
   window/WindowManager.*        Window policy: scan, move, resize, fit, launch, kill (no OS calls; uses platform())
   window/MonitorHelper.*        Monitor indexes and geometry, read through platform()
   window/WindowStabilizer.h     Re-applies a window's rectangle when the game moves it (per-platform .cpp)
@@ -25,6 +26,8 @@ src/
   window/GameWatch.h            Diagnostic log of the running game's windows, the foreground and the mouse clip
                                 (per-platform .cpp: platform/win32/Win32GameWatch.cpp, unsupported/ stand-in)
   window/GameWatchModel.*       Pure logic: what changed about a game window, the foreground / mouse lines
+  window/FocusSwitch.*          Pure logic: who has the keyboard (game / app / other), what the focus hotkey does,
+                                hotkey text <-> modifiers + virtual-key code
   window/FitCalculator.*        Pure logic: fit-to-monitor maths (Fit::compute) and the
                                 launch-settle trigger (Fit::Trigger)
   window/Supersample.*          Pure logic: letterbox, render size, parking position
@@ -37,6 +40,9 @@ src/
   platform/win32/Win32Display.cpp           DisplayBackend on Windows: DisplayConfig, ChangeDisplaySettingsEx,
                                             SetDisplayConfig, WMI + DDC/CI brightness, mscms colour profiles
   platform/unsupported/DisplayUnsupported.cpp  DisplayBackend stand-in (Linux): supported() == false
+  gameconfig/GameConfigModel.*  Pure logic: a game's config settings (JSON), an Unreal Engine 4 game's config layout,
+                                the keys per file, JConfig's monitor_misc.bin fields
+  gameconfig/GameConfigFiles.*  Writes them into the game's files (copy of each original as *.wm-original), restores
   stats/StatsModel.*            Pure logic: GPU counter instance names, GPU / CPU / frame-rate maths, the slow-game
                                 warnings, the log line; Sampler turns two raw samples in a row into GameStats
   stats/StatsBackend.h          Interface to the game's resource use, the GPU setting, power plans / mode, and statsBackend()
@@ -65,6 +71,8 @@ src/
   ui/LogViewerDialog.*          File > View logs...: app and per-game log viewer
   ui/HelixPanel.*               HelixSR tab: set-up / update with a timer, list of confirmed games, run
   ui/DisplayPanel.*             Display tab: this PC's display settings, and the selected game's own
+  ui/GameConfigPanel.*          Game config tab: render scale, resolution and JConfig window for the selected game
+  ui/FocusMonitor.*             Reads the foreground every 250 ms: Focus: game / app / other (FocusSwitch::ownerOf)
   ui/StatsMonitor.*             Samples the game once a second while the stats bar or the floating bar shows;
                                 logs a summary; statsUpdated() feeds the views
   ui/StatsBar.*                 Game stats bar (a bottom QToolBar), shows StatsMonitor's samples
@@ -290,6 +298,59 @@ Spin boxes are styled in the same sheet; their arrows are the SVGs in `resources
 - `Stats::warningsFor` decides the warnings; the bar logs each once per game run and a `summaryLine` 10 s after the game is
   first seen and then every minute.
 
+## Game config
+
+```
+ GameConfigPanel -- combos --> AppConfig GameEntry::gameConfig (GameConfig::Settings, JSON "GameConfig")
+      | Write now / Restore originals
+      v
+ MainWindow::launchWhenFree --> GameConfig::apply(exeForConfig(exe, childExePath), settings)   (before the display
+                                    settings and the launch: the game reads its files at start-up)
+ apply / restore, per file of GameConfig::layoutFor(exe):
+   <file>.wm-original exists? -> the original;  else the file itself (and nothing to do if the settings don't touch it)
+   entriesFor(file, settings, original) -> IniText::apply(current, entries, "=")  -> write if changed (copy kept first)
+   monitor_misc.bin: readJConfig -> jconfigFor(settings, original) -> writeJConfig
+```
+
+- **Layout.** `layoutFor` expects `<root>/<Project>/Binaries/Win64|Win32/<exe>`: `DefaultEngine.ini` and
+  `DefaultGameUserSettings.ini` in `<Project>/Config`, `WindowsEngine.ini` in `<root>/Engine/Config/Windows`, JConfig's
+  `monitor_misc.bin` next to the exe. The tab is usable when `DefaultEngine.ini` exists (loose config, as in Tekken 7's
+  arcade builds: no `Saved/` folder, nothing packed).
+- **Keys.** `[SystemSettings]` outranks the scalability groups and is the only place `r.ScreenPercentage` may exceed
+  100 (`sg.ResolutionQuality` is capped at 100 by the engine, so it gets `min(scale, 100)`). `r.Upscale.Quality=3` goes
+  with any render scale. The resolution goes to `ResX/ResY`, `ResolutionSizeX/Y`, `r.setres` and JConfig's DX resolution.
+- **Edits in place.** Only the managed keys change; a setting left at 0 takes the original's value (or removes the key the
+  original did not have), so the user's own edits elsewhere survive, and **Restore originals** is `apply(Settings{})` plus
+  deleting the copies. `IniText::apply` returns the text untouched when nothing changes; otherwise trailing blank lines go.
+  The encoding (UTF-8, UTF-8 with BOM, UTF-16 LE) and line endings stay.
+- **JConfig** (`monitor_misc.bin`, 244 bytes = 61 little-endian int32): offset 60/64 window position, 68/72 window size,
+  76/80 DX resolution, read from the user's file and the game's first window (2026-10-20). Other values are kept; a file
+  of another size is left alone. JConfig's own dialog reads the same file.
+- `.bat` games: `exeForConfig` uses `childExePath` when the script is not inside `Binaries`.
+
+## Focus switch
+
+- `FocusMonitor` polls `platform().foregroundWindow()` (`GetForegroundWindow`; X11 `_NET_ACTIVE_WINDOW`) every 250 ms.
+  `FocusSwitch::ownerOf` compares the foreground pid with this app's, the active game window's
+  (`controller.activeWindowPid()`) and whether the foreground process runs the target exe (read once per pid).
+- `MainWindow::updateFocusSwitch` shows the result at the end of the stats bar (the status bar without one) and registers
+  the hotkey (`RegisterHotKey`, id 3, default `F1` from `windowmanager.ini` `focusHotkey`) **only while a game is found**,
+  so F1 is not taken from other programs (nor from this app's help) the rest of the time. `WM_HOTKEY` ->
+  `switchFocus()`: the game has it -> `takeForeground()`, else `releaseForeground()` + `controller.focusTarget()`.
+- `takeForeground()`: `bringToFront()`; if Windows refused, `AttachThreadInput` to the foreground thread for the
+  `SetForegroundWindow`; then `LockSetForegroundWindow(LSFW_LOCK)` while any window of this process is in front.
+  0.5 s later the foreground is checked and logged. Tekken 7 + JConfig takes it back even so (reproduced with a test
+  program that attaches to the foreground thread's input; disabling the game window with `EnableWindow` did not stop
+  it either), so then `setMouseOnly(true)`: `WS_EX_NOACTIVATE` on this window, so clicks reach the buttons without
+  activating it and there is no tug of war. Off when the owner becomes `None` (the game closed).
+- **Window opacity** (*View > Window opacity*, `opacity` / `opacityGameOnly` in `windowmanager.ini`):
+  `MainWindow::applyOpacity` -> `QWidget::setWindowOpacity` (a layered window on Windows; needs a compositor on X11).
+  With *Only while a game runs* it follows `FocusMonitor` (100 % while the owner is `None`); called from
+  `updateFocusSwitch`.
+- **Terminate key** (id 4, default `F2`, `killHotkey`): `FocusSwitch::DoublePress` (2 s); the first press beeps
+  (`MessageBeep`) and logs, the second calls `controller.killTarget()` (Shutdown without the confirmation box, which
+  cannot be answered while the game has the focus).
+
 ## HelixSR
 
 ```
@@ -363,6 +424,8 @@ unit-tested directly.
 | `tst_display` | mode lists (sizes, refresh rates, best mode, portrait), scale steps relative to the recommended one, brightness percent, WMI instance matching, a game's display settings (JSON, sanitising, description), choosing the monitor, the plan (only what differs and the display supports) and the undo record (first value wins, JSON); on Windows a read-only probe of this PC's displays is printed |
 | `tst_stats` | GPU counter instance names, busiest engine and video memory per process, CPU percent, frame rate and 1 % low (late and out-of-order presents, stale), dedicated adapter, the warnings, short GPU names, reading / editing the graphics-setting value, the floating bar's line, driver matching / dates / NVIDIA versions,
 NVIDIA lookup ids (notebook vs desktop) and its answer, the log line, the sampler across samples and processes; on Windows a live sample of the test process is printed |
+| `tst_gameconfig` | layout from the exe path (Win64 / Win32, native separators, not Unreal), the `.bat` game's exe, the keys per file (render scale above / below 100, resolution, left settings take the original or are removed), JConfig's fields (read / write / other bytes kept / wrong size), JSON and sanitising; against a fake Tekken folder: write (CRLF kept, copies only of changed files, nothing on a second run), a user's edit surviving, restore (originals back, copies gone), UTF-8 BOM kept, a game without config |
+| `tst_focusswitch` | who has the focus (game, a second game process, app, other, no game), the toggle, labels, the press-twice rule of the terminate key, hotkey parsing (F-keys, letters, digits, named keys, modifiers, invalid) and text round trip |
 | `tst_helix` | version parsing/ordering, release choice (no prereleases, the right zip), checksums, update decision, DLL version, game root, FSR DLL detection and installed / replaced state, async scan delivery, built-package marker and driver fingerprint, post-build leftovers, helixsr.ini parsing and in-place editing, GPU family and the can-this-PC-run-it verdict (a live probe of the test machine is printed too) |
 
 The UI and the real OS backend (`platform/win32/`) are not unit-tested; they are checked by running the

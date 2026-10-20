@@ -21,6 +21,10 @@ private slots:
         g.id = "GAME_MY_GAME";
         g.helixConfirmed = true;
         g.steamAppId = 1593500;
+        g.display.enabled = true;
+        g.display.width = 1280;
+        g.display.height = 720;
+        g.display.hdr = 1;
         cfg.saveGame(g);
         cfg.setCurrentExePath(g.applicationPath);
         cfg.saveWindowProfile(g.applicationPath, 10, 20, 1280, 720);
@@ -37,6 +41,7 @@ private slots:
         QCOMPARE(game->id, QString("GAME_MY_GAME"));
         QVERIFY(game->helixConfirmed);
         QCOMPARE(game->steamAppId, 1593500u);
+        QCOMPARE(game->display, g.display);
 
         const auto prof = cfg.getWindowProfile(g.applicationPath);
         QVERIFY(prof.has_value());
@@ -60,6 +65,7 @@ private slots:
         cfg.setConfigPathOverride(path);
         QVERIFY(cfg.load());
         QVERIFY(!cfg.gameByPath("C:/a.exe")->helixConfirmed);
+        QVERIFY(!cfg.gameByPath("C:/a.exe")->display.enabled);   // no display settings either
     }
 
     void clearProfile()

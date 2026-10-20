@@ -1,4 +1,8 @@
 #include <QApplication>
+#include <QCryptographicHash>
+#include <QDir>
+#include <QLocalServer>
+#include <QLocalSocket>
 
 #include "MainWindow.h"
 #include "core/Logger.h"
@@ -11,6 +15,16 @@
 #ifdef Q_OS_WIN
 #include <Windows.h>
 #endif
+
+// One running copy per install folder (and user): a second start brings the first to the front.
+// Keyed by the folder, so a separate copy (a test build) can still run next to it.
+static QString instanceKey()
+{
+    const QString user = qEnvironmentVariable("USERNAME", qEnvironmentVariable("USER"));
+    const QByteArray dir = QDir(QCoreApplication::applicationDirPath()).canonicalPath().toLower().toUtf8();
+    return "WindowManager-" + user + "-"
+           + QString::fromLatin1(QCryptographicHash::hash(dir, QCryptographicHash::Sha1).toHex().left(12));
+}
 
 static void qtMessageHandler(QtMsgType type, const QMessageLogContext& ctx, const QString& msg)
 {
@@ -43,6 +57,24 @@ int main(int argc, char *argv[])
         / "windowmanager.log");
     qInstallMessageHandler(qtMessageHandler);
 
+    const QString key = instanceKey();
+    {
+        QLocalSocket running;
+        running.connectToServer(key);
+        if (running.waitForConnected(500)) {
+#ifdef Q_OS_WIN
+            AllowSetForegroundWindow(ASFW_ANY);   // let the running copy come to the front
+#endif
+            running.write("show\n");
+            running.waitForBytesWritten(500);
+            Logger::instance().info("WindowManager is already running: brought it to the front", "main");
+            return 0;
+        }
+    }
+    QLocalServer::removeServer(key);   // a socket file left by a crash (Linux)
+    QLocalServer instances;
+    instances.listen(key);
+
     Logger::instance().info("=== WindowManager started ===", "main");
 
     QApplication::setApplicationName("WindowManager");
@@ -51,6 +83,12 @@ int main(int argc, char *argv[])
 
     MainWindow window;
     window.show();
+    QObject::connect(&instances, &QLocalServer::newConnection, &window, [&instances, &window]() {
+        while (QLocalSocket *other = instances.nextPendingConnection()) {
+            QObject::connect(other, &QLocalSocket::disconnected, other, &QObject::deleteLater);
+            window.bringToFront();   // the only message is "show"
+        }
+    });
 
     const int result = app.exec();
     Logger::instance().info("=== WindowManager exiting (code " +

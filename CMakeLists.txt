@@ -49,9 +49,33 @@ set(WINDOW_MANAGER_SOURCES
     $<$<PLATFORM_ID:Linux>:src/platform/x11/X11Backend.cpp>
     $<$<PLATFORM_ID:Linux>:src/platform/PollingWindowStabilizer.cpp>
     $<$<PLATFORM_ID:Linux>:src/platform/unsupported/ScaledViewUnsupported.cpp>
+    # System display settings (Display tab): pure model (unit-tested), interface, per-game session
+    src/display/DisplayModel.h
+    src/display/DisplayModel.cpp
+    src/display/DisplayBackend.h
+    src/display/DisplaySession.h
+    src/display/DisplaySession.cpp
+    $<$<PLATFORM_ID:Windows>:src/platform/win32/Win32Display.cpp>
+    $<$<NOT:$<PLATFORM_ID:Windows>>:src/platform/unsupported/DisplayUnsupported.cpp>
+    # Game stats bar: pure model (unit-tested) and the reading per platform
+    src/stats/StatsModel.h
+    src/stats/StatsModel.cpp
+    src/stats/StatsBackend.h
+    src/stats/DriverModel.h
+    src/stats/DriverModel.cpp
+    src/stats/DriverCheck.h
+    src/stats/DriverCheck.cpp
+    $<$<PLATFORM_ID:Windows>:src/platform/win32/Win32Stats.cpp>
+    $<$<NOT:$<PLATFORM_ID:Windows>>:src/platform/unsupported/StatsUnsupported.cpp>
     # Kill-scope decision logic (pure, unit-tested)
     src/window/KillPlanner.h
     src/window/KillPlanner.cpp
+    # Diagnostic log of the game's windows, focus and mouse (line logic pure, unit-tested)
+    src/window/GameWatch.h
+    src/window/GameWatchModel.h
+    src/window/GameWatchModel.cpp
+    $<$<PLATFORM_ID:Windows>:src/platform/win32/Win32GameWatch.cpp>
+    $<$<NOT:$<PLATFORM_ID:Windows>>:src/platform/unsupported/GameWatchUnsupported.cpp>
     # Fit-to-monitor maths and launch-settle trigger (pure, unit-tested)
     src/window/FitCalculator.h
     src/window/FitCalculator.cpp
@@ -89,6 +113,16 @@ set(WINDOW_MANAGER_SOURCES
     src/ui/LogViewerDialog.cpp
     src/ui/HelixPanel.h
     src/ui/HelixPanel.cpp
+    src/ui/DisplayPanel.h
+    src/ui/DisplayPanel.cpp
+    src/ui/StatsBar.h
+    src/ui/StatsBar.cpp
+    src/ui/StatsMonitor.h
+    src/ui/StatsMonitor.cpp
+    src/ui/MiniBar.h
+    src/ui/MiniBar.cpp
+    src/ui/GpuPanel.h
+    src/ui/GpuPanel.cpp
     # HelixSR: release/version parsing, game detection, on-disk layout (pure, unit-tested)
     src/helix/HelixRelease.h
     src/helix/HelixRelease.cpp
@@ -156,7 +190,8 @@ endif()
 
 if(WIN32)
     target_compile_definitions(WindowManager PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
-    target_link_libraries(WindowManager PRIVATE user32 gdi32 dwmapi d3d12 dxgi)
+    target_link_libraries(WindowManager PRIVATE user32 gdi32 dwmapi d3d12 dxgi dxva2 wbemuuid ole32 oleaut32
+                                                pdh powrprof advapi32)
 endif()
 
 # Copy the Qt runtime next to the exe after every build so it starts without
@@ -196,20 +231,22 @@ if(WINDOWMANAGER_BUILD_TESTS)
     add_wm_test(tst_utilities   src/core/Utilities.cpp)
     add_wm_test(tst_killplanner src/window/KillPlanner.cpp)
     add_wm_test(tst_fit         src/window/FitCalculator.cpp)
+    add_wm_test(tst_gamewatch   src/window/GameWatchModel.cpp)
     add_wm_test(tst_supersample src/window/Supersample.cpp)
     add_wm_test(tst_steammatch  src/window/SteamMatch.cpp)
-    add_wm_test(tst_appconfig   src/config/AppConfig.cpp src/core/Logger.cpp)
+    add_wm_test(tst_appconfig   src/config/AppConfig.cpp src/core/Logger.cpp src/display/DisplayModel.cpp)
     # WindowManager and MonitorHelper against a fake PlatformBackend (no real windows)
     add_wm_test(tst_windowmanager
                 src/window/WindowManager.cpp src/window/MonitorHelper.cpp
                 src/window/KillPlanner.cpp src/window/FitCalculator.cpp src/window/SteamMatch.cpp
                 src/platform/PlatformBackend.cpp
-                src/config/AppConfig.cpp src/core/Logger.cpp)
+                src/config/AppConfig.cpp src/core/Logger.cpp src/display/DisplayModel.cpp)
     target_link_libraries(tst_windowmanager PRIVATE Qt${QT_VERSION_MAJOR}::Gui)
     # Steam library parsing, a fake Steam folder, and the sync into the saved games
     add_wm_test(tst_steamlibrary
                 src/window/SteamLibrary.cpp src/ui/GameRegistry.cpp
-                src/config/AppConfig.cpp src/core/Utilities.cpp src/core/Logger.cpp)
+                src/config/AppConfig.cpp src/core/Utilities.cpp src/core/Logger.cpp
+                src/display/DisplayModel.cpp)
     target_link_libraries(tst_steamlibrary PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
     if(UNIX AND NOT APPLE)
         # The real X11 backend against an xterm (skips itself without a display)
@@ -221,6 +258,23 @@ if(WINDOWMANAGER_BUILD_TESTS)
                                 src/helix/HelixIni.cpp src/helix/SystemProbe.cpp)
     if(WIN32)
         target_link_libraries(tst_helix PRIVATE d3d12 dxgi)   # SystemProbe asks the GPU driver
+    endif()
+    # Display model (modes, scale steps, brightness, per-game plan / undo); on Windows also a
+    # read-only probe of this PC's displays (nothing is changed)
+    if(WIN32)
+        add_wm_test(tst_display src/display/DisplayModel.cpp src/platform/win32/Win32Display.cpp)
+        target_link_libraries(tst_display PRIVATE user32 dxva2 wbemuuid ole32 oleaut32)
+    else()
+        add_wm_test(tst_display src/display/DisplayModel.cpp src/platform/unsupported/DisplayUnsupported.cpp)
+    endif()
+    # Stats model (GPU counter names, CPU / frame-rate maths, warnings); on Windows also a
+    # read-only sample of the test process itself
+    if(WIN32)
+        add_wm_test(tst_stats src/stats/StatsModel.cpp src/stats/DriverModel.cpp src/platform/win32/Win32Stats.cpp)
+        target_link_libraries(tst_stats PRIVATE dxgi pdh powrprof advapi32 ole32)
+    else()
+        add_wm_test(tst_stats src/stats/StatsModel.cpp src/stats/DriverModel.cpp
+                    src/platform/unsupported/StatsUnsupported.cpp)
     endif()
 endif()
 

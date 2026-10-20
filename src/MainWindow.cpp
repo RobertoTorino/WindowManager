@@ -4,9 +4,13 @@
 #include "config/AppConfig.h"
 #include "core/BuildInfo.h"
 #include "core/Logger.h"
+#include "display/DisplaySession.h"
+#include "stats/StatsBackend.h"
 #include "ui/ControlPanels.h"
+#include "ui/DisplayPanel.h"
 #include "ui/FitDialog.h"
 #include "ui/GameBar.h"
+#include "ui/GpuPanel.h"
 #include "ui/ScaledView.h"
 #include "ui/GameRegistry.h"
 #include "ui/HelixPanel.h"
@@ -14,6 +18,10 @@
 #include "ui/InfoDialogs.h"
 #include "ui/LogViewerDialog.h"
 #include "ui/SnapshotCapture.h"
+#include "ui/MiniBar.h"
+#include "window/GameWatch.h"
+#include "ui/StatsBar.h"
+#include "ui/StatsMonitor.h"
 #include "ui/Theme.h"
 #include "ui/WindowTable.h"
 #include "window/MonitorHelper.h"
@@ -26,6 +34,7 @@
 #include <QCoreApplication>
 #include <QDesktopServices>
 #include <QFileDialog>
+#include <QGuiApplication>
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QIcon>
@@ -42,6 +51,7 @@
 #include <QTabBar>
 #include <QTabWidget>
 #include <QTimer>
+#include <QToolBar>
 #include <QUrl>
 #include <QVBoxLayout>
 
@@ -52,6 +62,7 @@
 namespace {
 
 constexpr int kStopViewHotkey = 1;
+constexpr int kReleaseMouseHotkey = 2;
 
 QSettings uiSettings()
 {
@@ -66,6 +77,7 @@ MainWindow::MainWindow(QWidget *parent)
     , m_controller(new WindowManagerController(this))
     , m_snapshots(new SnapshotCapture(m_controller, this))
     , m_view(new ScaledView(this))
+    , m_display(new DisplaySession(this))
 {
     setWindowTitle(BuildInfo::windowTitle());
     setWindowIcon(QIcon(":/window-manager-icon.png"));
@@ -93,6 +105,9 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_view, &ScaledView::message, this, [this](const QString &text) {
         m_detailLabel->setText(text);
     });
+    connect(m_display, &DisplaySession::message, this, [this](const QString &text) {
+        m_detailLabel->setText(text);
+    });
 
     // HelixSR tab
     connect(m_helix, &HelixPanel::message, this, [this](const QString &text) {
@@ -110,7 +125,34 @@ MainWindow::MainWindow(QWidget *parent)
 #ifdef Q_OS_WIN
     RegisterHotKey(reinterpret_cast<HWND>(winId()), kStopViewHotkey,
                    MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 'D');
+    RegisterHotKey(reinterpret_cast<HWND>(winId()), kReleaseMouseHotkey,
+                   MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 'M');
 #endif
+
+    // Keep this window off the game's monitor: after every action, when the game moves its window,
+    // and when the downscaled view starts or stops.
+    m_keepOffTimer = new QTimer(this);
+    m_keepOffTimer->setSingleShot(true);
+    m_keepOffTimer->setInterval(400);
+    connect(m_keepOffTimer, &QTimer::timeout, this, &MainWindow::keepOffGameMonitor);
+    connect(m_controller, &WindowManagerController::statusChanged, m_keepOffTimer, qOverload<>(&QTimer::start));
+    connect(m_view, &ScaledView::runningChanged, m_keepOffTimer, qOverload<>(&QTimer::start));
+    if (m_watch)
+        connect(m_watch, &GameWatch::windowsChanged, m_keepOffTimer, qOverload<>(&QTimer::start));
+
+    // The window list follows the game by itself: at once when the game watch sees a window change or
+    // the game start / stop, else every 3 s (also on systems without the watch). Scan does it on demand.
+    if (m_watch)
+        connect(m_watch, &GameWatch::windowsChanged, m_controller, &WindowManagerController::refreshWindows);
+    if (m_monitor)
+        connect(m_monitor, &StatsMonitor::gameChanged, m_controller, &WindowManagerController::refreshWindows);
+    m_listTimer = new QTimer(this);
+    m_listTimer->setInterval(3000);
+    connect(m_listTimer, &QTimer::timeout, this, [this]() {
+        if (isVisible() && !isMinimized() && !m_controller->targetExecutable().isEmpty())
+            m_controller->refreshWindows();
+    });
+    m_listTimer->start();
 
     auto *monitorToggle = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_S), this);
     connect(monitorToggle, &QShortcut::activated, this, &MainWindow::toggleGameMonitor);
@@ -123,6 +165,18 @@ MainWindow::MainWindow(QWidget *parent)
     m_confirmKill = settings.value("confirmKill", true).toBool();
     m_confirmKillAction->setChecked(m_confirmKill);
     m_fitCheckAction->setChecked(settings.value("fitCheck", true).toBool());
+    if (m_statsBar)
+        m_statsBar->setVisible(settings.value("statsBar", true).toBool());
+    m_miniOnMinimizeAction->setChecked(settings.value("miniBar", true).toBool());
+    m_avoidGameMonitorAction->setChecked(settings.value("avoidGameMonitor", true).toBool());
+    if (settings.contains("miniBarPos")) {
+        m_mini->move(settings.value("miniBarPos").toPoint());
+        m_miniPlaced = true;
+    }
+    updateStatsMonitor();
+
+    // A game's display settings left behind by a crash
+    m_display->recoverFromCrash();
 
     refreshGames();
     refresh();
@@ -133,8 +187,10 @@ MainWindow::MainWindow(QWidget *parent)
 
 MainWindow::~MainWindow()
 {
+    delete m_mini;
 #ifdef Q_OS_WIN
     UnregisterHotKey(reinterpret_cast<HWND>(winId()), kStopViewHotkey);
+    UnregisterHotKey(reinterpret_cast<HWND>(winId()), kReleaseMouseHotkey);
 #endif
 }
 
@@ -145,6 +201,11 @@ bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr
     const MSG *msg = static_cast<const MSG *>(message);
     if (msg->message == WM_HOTKEY && msg->wParam == kStopViewHotkey) {
         m_view->stop();
+        *result = 0;
+        return true;
+    }
+    if (msg->message == WM_HOTKEY && msg->wParam == kReleaseMouseHotkey) {
+        releaseMouse();
         *result = 0;
         return true;
     }
@@ -172,14 +233,23 @@ void MainWindow::buildUi()
     auto *presets  = new PresetPanel(m_controller, m_tabs);
     auto *capture  = new CapturePanel(m_controller, m_snapshots, m_tabs);
     auto *downscale = new DownscalePanel(m_controller, m_view, m_tabs);
+    auto *display  = new DisplayPanel(m_controller, m_display, m_tabs);
+    connect(display, &DisplayPanel::message, this, [this](const QString &text) {
+        m_detailLabel->setText(text);
+    });
     m_tabs->addTab(state,    "Window");
     m_tabs->addTab(position, "Position && Size");
     m_tabs->addTab(presets,  "Presets");
     m_tabs->addTab(downscale, "Downscale");
+    m_tabs->addTab(display,  "Display");
+    auto *gpu = new GpuPanel(m_controller, m_tabs);
+    connect(gpu, &GpuPanel::message, this, [this](const QString &text) { m_detailLabel->setText(text); });
+    connect(gpu, &GpuPanel::restartRequested, this, &MainWindow::restartSelectedGame);
+    m_tabs->addTab(gpu,      "GPU && Power");
     m_tabs->addTab(capture,  "Capture");
     m_helix = new HelixPanel(m_controller, m_tabs);
     m_tabs->addTab(m_helix,  "HelixSR");
-    m_panels = {state, position, presets, downscale, capture, m_helix};
+    m_panels = {state, position, presets, downscale, display, gpu, capture, m_helix};
 
     // QTabWidget sizes itself to its tallest page, which leaves blank space under
     // shorter ones. Cap its height to tab bar + current page instead; the window
@@ -238,6 +308,35 @@ void MainWindow::buildUi()
     statusBar()->setSizeGripEnabled(true);
     statusBar()->addWidget(m_detailLabel, 1);
     statusBar()->addPermanentWidget(m_targetLabel);
+
+    // Second bar above the status bar: the running game's FPS, CPU, GPU, memory and power state
+    if (StatsBar::available()) {
+        m_monitor = new StatsMonitor(m_controller, this);
+        m_stats = new StatsBar(m_controller, this);
+        m_statsBar = new QToolBar("Game stats", this);
+        m_statsBar->setObjectName("statsBar");
+        m_statsBar->setMovable(false);
+        m_statsBar->setFloatable(false);
+        m_statsBar->addWidget(m_stats);
+        addToolBar(Qt::BottomToolBarArea, m_statsBar);
+        connect(m_monitor, &StatsMonitor::statsUpdated, m_stats, &StatsBar::display);
+        connect(m_monitor, &StatsMonitor::statsUpdated, gpu, &GpuPanel::showStats);
+        connect(m_statsBar->toggleViewAction(), &QAction::toggled, this, &MainWindow::updateStatsMonitor);
+        if (GameWatch::supported()) {
+            m_watch = new GameWatch(this);
+            connect(m_monitor, &StatsMonitor::gameChanged, m_watch, &GameWatch::watch);
+        }
+    }
+
+    // The floating bar the app minimizes to
+    m_mini = new MiniBar;
+    connect(m_mini, &MiniBar::restoreRequested, this, &MainWindow::restoreFromMiniBar);
+    connect(m_mini, &MiniBar::focusGameRequested, m_controller, &WindowManagerController::focusTarget);
+    connect(m_mini, &MiniBar::exitRequested, this, &QWidget::close);
+    if (m_monitor)
+        connect(m_monitor, &StatsMonitor::statsUpdated, m_mini, &MiniBar::display);
+    else
+        m_mini->setStatsShown(false);
 }
 
 QWidget *MainWindow::buildActionRow()
@@ -247,7 +346,8 @@ QWidget *MainWindow::buildActionRow()
     h->setContentsMargins(0, 0, 0, 0);
     h->setSpacing(6);
 
-    auto *scan = Theme::button("Scan", row, nullptr, "Refresh the window list");
+    auto *scan = Theme::button("Scan", row, nullptr,
+                               "Read the window list again and pick the best window (the list also follows the game by itself)");
     m_monitor1Button  = Theme::button("Monitor 1", row, nullptr, "Move the window to monitor 1 (Ctrl+S toggles)");
     m_monitor2Button  = Theme::button("Monitor 2", row, nullptr, "Move the window to monitor 2 (Ctrl+S toggles)");
     m_stabilityButton = Theme::button("Stability", row, nullptr, "Keep the window in place if the game moves it");
@@ -304,6 +404,21 @@ void MainWindow::buildMenus()
     connect(m_fitCheckAction, &QAction::toggled, m_controller, &WindowManagerController::setFitCheckEnabled);
     view->addAction("Fit window to &monitor...", QKeySequence(Qt::CTRL | Qt::Key_F),
                     m_controller, &WindowManagerController::requestFitCheck);
+    if (m_statsBar) {
+        QAction *stats = m_statsBar->toggleViewAction();
+        stats->setText("Game &stats bar");
+        view->addAction(stats);
+    }
+    m_avoidGameMonitorAction = view->addAction("&Keep this app off the game's monitor");
+    m_avoidGameMonitorAction->setCheckable(true);
+    connect(m_avoidGameMonitorAction, &QAction::toggled, this, [this](bool on) {
+        if (on)
+            m_keepOffTimer->start();
+    });
+    view->addAction("Release the mouse\tCtrl+Alt+M", this, &MainWindow::releaseMouse);
+    m_miniOnMinimizeAction = view->addAction("Minimize to &floating bar");
+    m_miniOnMinimizeAction->setCheckable(true);
+    view->addAction("Switch to floating &bar", QKeySequence(Qt::CTRL | Qt::Key_B), this, &MainWindow::showMiniBar);
     view->addSeparator();
     view->addAction("&Stop downscaled view", QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_D),
                     m_view, [this]() { m_view->stop(); });
@@ -326,6 +441,12 @@ void MainWindow::refresh()
 {
     const QString exe = m_controller->targetExecutable();
     m_targetLabel->setText(exe.isEmpty() ? QString("No target") : exe);
+    if (m_mini) {
+        const auto game = exe.isEmpty() ? std::nullopt : AppConfig::instance().gameByPath(exe);
+        m_mini->setGame(exe.isEmpty() ? QString()
+                        : game && !game->savedName.isEmpty() ? game->savedName
+                                                             : QFileInfo(exe).completeBaseName());
+    }
     m_detailLabel->setText(m_controller->statusText());
 
     const int monitor = m_controller->activeWindow() ? m_controller->activeWindowMonitorIndex() : 0;
@@ -469,24 +590,30 @@ void MainWindow::launchGame(const QString &exePath)
     launchWhenFree(exePath);
 }
 
-// Launches once no old process is left (launchTarget refuses while one runs).
+// Launches once no old process is left (launchTarget refuses while one runs). The game's own
+// display settings (Display tab) are applied first, as games read the resolution at start-up.
 void MainWindow::launchWhenFree(const QString &exePath)
 {
+    const auto launch = [this, exePath]() {
+        m_display->gameStarting(exePath);
+        if (!m_controller->launchTarget())
+            m_display->restore("the launch failed");
+    };
     m_controller->setTargetExecutable(exePath);
     if (!m_controller->isTargetRunning()) {
-        m_controller->launchTarget();
+        launch();
         return;
     }
     auto *timer = new QTimer(this);
     timer->setInterval(200);
     int ticks = 0;
-    connect(timer, &QTimer::timeout, this, [this, timer, exePath, ticks]() mutable {
+    connect(timer, &QTimer::timeout, this, [this, timer, exePath, ticks, launch]() mutable {
         m_controller->setTargetExecutable(exePath);
         if (m_controller->isTargetRunning() && ++ticks < 25)   // give up after 5 s
             return;
         timer->stop();
         timer->deleteLater();
-        m_controller->launchTarget();
+        launch();
     });
     timer->start();
 }
@@ -576,9 +703,59 @@ void MainWindow::toggleGameMonitor()
         m_controller->moveToMonitor1();
 }
 
+int MainWindow::gameMonitorIndex() const
+{
+    // While the downscaled view runs the game window is parked off-screen; what you see is the overlay.
+    if (const int view = m_view->monitorIndex())
+        return view;
+    return m_controller->activeWindow() ? m_controller->activeWindowMonitorIndex() : 0;
+}
+
+void MainWindow::keepOffGameMonitor()
+{
+    if (!m_avoidGameMonitorAction->isChecked() || !isVisible() || isMinimized()
+        || MonitorHelper::getMonitorCount() < 2)
+        return;
+    const int game = gameMonitorIndex();
+    const int app  = MonitorHelper::getMonitorIndexFromWindow(quintptr(winId()));
+    if (game == 0 || app != game)
+        return;
+    moveAppToOppositeMonitor();
+    Logger::instance().info(QString("Moved this app from monitor %1 (the game's) to monitor %2")
+                                .arg(game).arg(MonitorHelper::getMonitorIndexFromWindow(quintptr(winId())))
+                                .toStdString(),
+                            "MainWindow");
+}
+
+void MainWindow::bringToFront()
+{
+    if (m_mini->isVisible()) {
+        restoreFromMiniBar();
+    } else {
+        setWindowState(windowState() & ~Qt::WindowMinimized);
+        show();
+        raise();
+        activateWindow();
+    }
+#ifdef Q_OS_WIN
+    SetForegroundWindow(reinterpret_cast<HWND>(winId()));
+#endif
+}
+
+void MainWindow::releaseMouse()
+{
+    // A game that locks the mouse (ClipCursor) lets go once it loses the foreground.
+#ifdef Q_OS_WIN
+    ClipCursor(nullptr);
+#endif
+    bringToFront();
+    Logger::instance().info("Mouse released (Ctrl+Alt+M): this app is in front", "MainWindow");
+    m_detailLabel->setText("Mouse released. Click the game to give it the mouse back.");
+}
+
 void MainWindow::moveAppToOppositeMonitor()
 {
-    const int gameMonitor = m_controller->activeWindowMonitorIndex(); // 0 = unknown
+    const int gameMonitor = gameMonitorIndex(); // 0 = unknown
 
     const auto monitors = MonitorHelper::enumerateMonitors();
     if (monitors.empty())
@@ -605,13 +782,60 @@ void MainWindow::setAlwaysOnTop(bool onTop)
         show();
 }
 
+void MainWindow::changeEvent(QEvent *event)
+{
+    QMainWindow::changeEvent(event);
+    if (event->type() == QEvent::WindowStateChange && isMinimized() && m_miniOnMinimizeAction
+        && m_miniOnMinimizeAction->isChecked())
+        QTimer::singleShot(0, this, &MainWindow::showMiniBar);   // not inside the state change
+}
+
+void MainWindow::showMiniBar()
+{
+    // First time, or the saved spot is on a monitor that is gone: top right of this window's screen.
+    m_mini->adjustSize();
+    if (!m_miniPlaced || !QGuiApplication::screenAt(m_mini->geometry().center())) {
+        const QRect area = screen()->availableGeometry();
+        m_mini->move(area.right() - m_mini->width() - 24, area.top() + 24);
+        m_miniPlaced = true;
+    }
+    hide();
+    m_mini->show();
+    updateStatsMonitor();
+}
+
+void MainWindow::restoreFromMiniBar()
+{
+    m_mini->hide();
+    setWindowState(windowState() & ~Qt::WindowMinimized);
+    show();
+    raise();
+    activateWindow();
+    updateStatsMonitor();
+}
+
+void MainWindow::updateStatsMonitor()
+{
+    if (m_monitor)
+        m_monitor->setActive((m_statsBar && !m_statsBar->isHidden()) || m_mini->isVisible());
+}
+
 void MainWindow::closeEvent(QCloseEvent *event)
 {
     m_view->stop(); // give the game its window back
+    m_display->restore("WindowManager closed");
     QSettings settings = uiSettings();
     settings.setValue("geometry", saveGeometry());
     settings.setValue("alwaysOnTop", windowFlags().testFlag(Qt::WindowStaysOnTopHint));
     settings.setValue("confirmKill", m_confirmKill);
     settings.setValue("fitCheck", m_controller->fitCheckEnabled());
+    if (m_statsBar)
+        settings.setValue("statsBar", !m_statsBar->isHidden());   // this window may be hidden (floating bar)
+    settings.setValue("miniBar", m_miniOnMinimizeAction->isChecked());
+    settings.setValue("avoidGameMonitor", m_avoidGameMonitorAction->isChecked());
+    if (m_miniPlaced)
+        settings.setValue("miniBarPos", m_mini->pos());
+    m_mini->hide();
+    statsBackend().shutdown();   // ends the frame trace session
     QMainWindow::closeEvent(event);
 }

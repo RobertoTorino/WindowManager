@@ -24,6 +24,7 @@ QTableWidgetItem* makeItem(const QString& text, bool centered = false, bool dim 
 WindowTable::WindowTable(QWidget* parent)
     : QTableWidget(parent)
 {
+    setObjectName("windowTable");   // the active row's colour: Theme.cpp
     setColumnCount(ColCount);
     setHorizontalHeaderLabels({"HWND", "Title", "Class", "Status", "PID", "X", "Y", "W", "H"});
     setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -72,18 +73,28 @@ void WindowTable::setWindows(const std::vector<WindowManager::WindowInfo>& windo
         m_hwnds.push_back(w.hwnd);
         const bool dim = !w.visible;
 
+        const bool active = w.hwnd == activeHwnd;
+        const QString status = active ? QString("Active") : w.visible ? QString("Visible") : QString("Hidden");
+
         setItem(i, ColHwnd,   makeItem(QString::number(w.hwnd), false, dim));
         setItem(i, ColTitle,  makeItem(w.title, false, dim));
         setItem(i, ColClass,  makeItem(w.className, false, dim));
-        setItem(i, ColStatus, makeItem(w.visible ? "Visible" : "Hidden", true, dim));
+        setItem(i, ColStatus, makeItem(status, true, dim));
         setItem(i, ColPid,    makeItem(QString::number(w.pid), true, dim));
         setItem(i, ColX,      makeItem(QString::number(w.x), true, dim));
         setItem(i, ColY,      makeItem(QString::number(w.y), true, dim));
         setItem(i, ColW,      makeItem(QString::number(w.w), true, dim));
         setItem(i, ColH,      makeItem(QString::number(w.h), true, dim));
 
-        if (w.hwnd == activeHwnd)
+        if (active) {
             activeRow = i;
+            for (int c = 0; c < ColCount; ++c) {
+                QFont bold = item(i, c)->font();
+                bold.setBold(true);
+                item(i, c)->setFont(bold);
+                item(i, c)->setToolTip("The active window: the buttons and tabs act on this one");
+            }
+        }
     }
 
     if (activeRow >= 0)

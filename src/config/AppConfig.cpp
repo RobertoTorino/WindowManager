@@ -84,6 +84,7 @@ bool AppConfig::load()
         game.helixConfirmed  = obj["HelixConfirmed"].toBool(false);
         game.childExePath    = obj["ChildExePath"].toString();
         game.steamAppId      = static_cast<quint32>(obj["SteamAppId"].toInteger(0));
+        game.display         = DisplayModel::gameSettingsFromJson(obj["Display"].toObject());
         m_games.insert(path, game);
     }
 
@@ -125,6 +126,8 @@ bool AppConfig::save()
         obj["ChildExePath"]    = it.value().childExePath;
         if (it.value().steamAppId != 0)
             obj["SteamAppId"]  = static_cast<qint64>(it.value().steamAppId);
+        if (it.value().display.enabled || !it.value().display.isEmpty())
+            obj["Display"]     = DisplayModel::toJson(it.value().display);
         games.append(obj);
     }
 

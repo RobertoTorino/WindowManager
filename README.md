@@ -6,7 +6,8 @@
 
 A Windows tool for taming the windows of games and emulators: force true borderless
 fullscreen, set exact sizes, nudge and resize, move a game between monitors, keep a
-window from drifting, and grab screenshots. Built with C++20 and Qt 6.
+window from drifting, and grab screenshots. It also changes the PC's display settings
+(resolution, HDR, scale, brightness, ...), per game if you like. Built with C++20 and Qt 6.
 
 WindowManager is in **beta**. It also runs on Linux for Steam games under Proton (Bazzite, KDE Plasma),
 with fewer features and no download yet: see [Linux](docs/help/linux.md).
@@ -14,6 +15,7 @@ with fewer features and no download yet: see [Linux](docs/help/linux.md).
 - [Using WindowManager](#using-windowmanager)
 - [Fit to monitor (automatic)](#fit-to-monitor-automatic)
 - [Downscaled view (sharper picture)](#downscaled-view-sharper-picture)
+- [Display settings](#display-settings)
 - [HelixSR (FSR 3.1 upscaler for AMD GPUs)](#helixsr-fsr-31-upscaler-for-amd-gpus)
 - [The window at a glance](#the-window-at-a-glance)
 - [Keyboard shortcuts](#keyboard-shortcuts)
@@ -155,6 +157,73 @@ resolution" setting of an emulator or the GPU's DSR/VSR.
 
 ---
 
+## Display settings
+
+The **Display** tab has the settings of *Settings > System > Display* for each monitor:
+resolution, refresh rate and orientation (**Apply**, then confirm within 15 seconds or the old
+mode comes back), scale, HDR, brightness (a laptop panel through Windows, an external monitor
+through DDC/CI), colour profile, and how several displays are used (like Win+P, also confirmed).
+**Night light...** opens its Windows Settings page, as Windows has no supported way to switch it.
+
+**While the game runs:** tick *Use these settings while <game> runs* and choose a resolution,
+refresh rate, HDR, scale and brightness for the selected game (*Keep* leaves one alone). They are
+applied when you press **Start** / **Restart**, before the game starts, and undone when the game
+closes, when it did not start within 3 minutes, on **Restore now**, or when WindowManager closes.
+After a crash the desktop's settings are restored at the next start. The resolution is changed
+only for the game and never stored as Windows' setting.
+
+The scale goes through the same undocumented part of Windows that Settings uses; the rest uses
+documented Windows functions. Windows only for now. Details:
+[Display settings help page](docs/help/display-settings.md).
+
+---
+
+## Game stats bar
+
+A second bar above the status bar shows the running game's **FPS** (with the 1 % low), **CPU**,
+**GPU** use and the graphics card it renders on, **RAM**, **VRAM**, and whether the PC is
+plugged in or on battery. An orange warning appears when something is known to slow games down:
+on battery, battery saver, the *Best power efficiency* power mode, the game on the integrated GPU
+while there is a faster one, or the whole CPU busy. Hover over it for what to do.
+
+While a game runs, a summary goes into the game's log every minute (and each warning once), so a
+slow session can be checked afterwards. FPS needs administrator rights (or the *Performance Log
+Users* group) and counts DirectX games; the rest works without. *View > Game stats bar* hides it.
+Windows only for now. Details: [Game stats help page](docs/help/game-stats.md).
+
+To get FPS without running as administrator, add your account to *Performance Log Users* once, in
+PowerShell as administrator (put your name from `whoami` in place of `Admin`), then sign out and in:
+
+```powershell
+Add-LocalGroupMember -SID S-1-5-32-559 -Member Admin
+```
+
+The SID works in every Windows language. Full steps, and how to undo it:
+[Adding your account to Performance Log Users](docs/help/game-stats.md#adding-your-account-to-performance-log-users).
+
+The **GPU & Power** tab lists the PC's graphics cards with their driver version, asks NVIDIA whether a
+newer driver is out (Intel / AMD: a button to their driver page), and sets which card the selected game
+uses (*Let Windows decide*, *Power saving* or *High performance*: the setting of *Settings > System >
+Display > Graphics*, applied when the game starts next). It also switches the power plan (also the
+hidden ones, like *Power saver*) and the Windows power mode.
+
+> **Tip for laptops:** set your games to *High performance*. What *Let Windows decide* picks can change:
+> after an NVIDIA driver update it switched from the GeForce to the Intel UHD on a test laptop, so games
+> without their own setting rendered on the slow card. And play plugged in: on battery the CPU and GPU
+> run at a fraction of their speed.
+
+**Out of the game's way.** WindowManager runs once: starting it again brings the running copy to the
+front (also out of the floating bar). With *View > Keep this app off the game's monitor* (on by default)
+it moves to the other monitor whenever the game's window, or the downscaled view, is on the monitor it
+is on. **Ctrl+Alt+M** frees the mouse from a game that holds it (Unreal Engine games do while they have
+the focus) and brings the app to the front.
+
+**Floating bar.** Minimising the app turns it into a small always-on-top bar with the game's name, FPS,
+CPU, GPU and the first warning. Drag it anywhere; double-click it or press **Open** to get the window
+back (Ctrl+B switches to it directly; *View > Minimize to floating bar* turns it off).
+
+---
+
 ## HelixSR (FSR 3.1 upscaler for AMD GPUs)
 
 [HelixSR](https://github.com/lonewolf0622/HelixSR) is an unofficial free upscaler that replaces a
@@ -196,10 +265,11 @@ keep it on your PC. Details: [HelixSR help page](docs/help/helixsr.md).
 | | HWND | Title            | Class | Status | PID | X | Y | W | H          | |   Window table
 | |  ...                                                                   | |   (grows with the window)
 | +------------------------------------------------------------------------+ |
-| [ Window | Position & Size | Presets | Downscale | Capture | HelixSR ]     |   Tabs
+| [ Window | Position & Size | Presets | Downscale | Display | GPU & Power | Capture | HelixSR ] | Tabs
 | +------------------------------------------------------------------------+ |
 | |  controls for the selected tab                                         | |
 | +------------------------------------------------------------------------+ |
+| FPS 58 · 1% low 41  CPU 23 %  GPU 97 % · GeForce GTX 1650  RAM ...  Plugged in |   Game stats bar
 | status message                                               target exe    |   Status bar
 +----------------------------------------------------------------------------+
 ```
@@ -216,7 +286,7 @@ keep it on your PC. Details: [HelixSR help page](docs/help/helixsr.md).
 ### Main actions
 | Button | What it does |
 |---|---|
-| **Scan** | Refresh the table of windows for the target. |
+| **Scan** | Read the window list again and pick the best window (the list also follows the game by itself). |
 | **Monitor 1 / Monitor 2** | Move the selected window to that monitor (the current one is green). |
 | **Stability** | While on, if the game moves or resizes its window away from where you put it, it is put back. |
 | **Focus** | Bring the game window to the front. |
@@ -228,6 +298,14 @@ keep it on your PC. Details: [HelixSR help page](docs/help/helixsr.md).
 Lists title, class, visibility, PID and rectangle for each window of the target.
 Hidden windows are dimmed. When it is empty it tells you why: no game selected, or no
 windows found yet (start the game, then press **Scan**).
+
+The **active window**, the one every button and tab acts on, is the green, bold row with Status
+*Active*. Click another row to make that one active.
+
+The table follows the game by itself: when the game opens, closes, moves or resizes a window (at
+once on Windows, otherwise within 3 seconds). A window you picked stays active as long as it exists;
+when it closes, the best remaining window (visible, largest) becomes active. **Scan** reads the list
+again on demand and picks the best window.
 
 ### Tabs
 **Window**
@@ -254,6 +332,13 @@ high-resolution group 4096x2160, 5120x2880, 6016x3384, 7680x4320.
 looks sharper without anything falling off the screen; see
 [Downscaled view](#downscaled-view-sharper-picture).
 
+**Display** - the PC's display settings, and the selected game's own settings while it runs; see
+[Display settings](#display-settings).
+
+**GPU & Power** - the PC's graphics cards and their drivers (with an update check for NVIDIA), the card the
+running game renders on, Windows' graphics setting for the game (Let Windows decide / Power saving / High
+performance), the power plan and the power mode; see [Game stats bar](#game-stats-bar).
+
 **HelixSR** - set up and update HelixSR, and install it into / remove it from your FSR 3.1 games;
 see [HelixSR](#helixsr-fsr-31-upscaler-for-amd-gpus).
 
@@ -264,7 +349,7 @@ see [HelixSR](#helixsr-fsr-31-upscaler-for-amd-gpus).
 | Menu | Items |
 |---|---|
 | **File** | Add game..., Find Steam games, Open config file, View logs..., Exit |
-| **View** | Always on top, Confirm before terminating a game, Check window fit after launching a game, Fit window to monitor..., Stop downscaled view, Move this app to the other monitor |
+| **View** | Always on top, Confirm before terminating a game, Check window fit after launching a game, Fit window to monitor..., Game stats bar, Keep this app off the game's monitor, Release the mouse, Minimize to floating bar, Switch to floating bar, Stop downscaled view, Move this app to the other monitor |
 | **Help** | Help topics (F1), Keyboard shortcuts, Logs and troubleshooting, About |
 
 ---
@@ -276,7 +361,9 @@ see [HelixSR](#helixsr-fsr-31-upscaler-for-amd-gpus).
 | Ctrl+S | Toggle the game between monitor 1 and monitor 2 |
 | Ctrl+F | Fit window to monitor... (measure and propose the correction) |
 | Ctrl+Alt+D | Stop the downscaled view (global: works even when this app is not focused) |
+| Ctrl+Alt+M | Release the mouse from a game that holds it, and bring this app to the front (global) |
 | Ctrl+M | Move this app's window to the other monitor |
+| Ctrl+B | Switch to the floating bar |
 | Ctrl+O | Add game... |
 | F1 | Help |
 | Ctrl+L | View logs... |
@@ -290,8 +377,8 @@ All next to `WindowManager.exe`:
 
 | File | Contents |
 |---|---|
-| `windowmanager.json` | Saved games, the last target and per-game window profiles. Written atomically. |
-| `windowmanager.ini` | App window size/position, Always on top, the terminate-confirmation preference and the automatic fit check on/off. |
+| `windowmanager.json` | Saved games (with each game's display settings), the last target and per-game window profiles. Written atomically. |
+| `windowmanager.ini` | App window size/position, Always on top, the terminate-confirmation preference, the automatic fit check on/off, the game stats bar shown or hidden, and the floating bar (on / off, position). While a game's display settings are on, also how to undo them. |
 | `windowmanager.log`, `windowmanager_old.log` | Rolling application log (the old one is the previous file after rotation). |
 | `logs/<game>.log`, `logs/<game>_old.log` | Rolling log per game. View all logs in the app with **File > View logs...** (Ctrl+L). |
 | `snapshots/<game id>/` | Screenshots from the Capture tab. |
@@ -311,6 +398,9 @@ All next to `WindowManager.exe`:
   (`explorer.exe`, `cmd.exe`, browsers, ...) are never terminated.
 - The tool changes window styles and positions of other programs. **Reset All** and the
   **Windowed** button undo borderless changes.
+- A new resolution, orientation or display arrangement from the **Display** tab is undone after
+  15 seconds unless you confirm it. A game's display settings are undone when it closes (or at the
+  next start, if the app crashed).
 
 ## License
 

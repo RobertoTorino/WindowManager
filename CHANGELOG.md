@@ -6,6 +6,39 @@ Notable changes to WindowManager. The version number lives in `APP_VERSION` in `
 ## Unreleased
 
 ### Added
+- **Game stats bar** (Windows): a second bar above the status bar with the running game's FPS and 1 % low,
+  CPU, GPU use and the graphics card it renders on, RAM, video memory, and the power state. A warning
+  appears for what is known to slow games down: on battery, battery saver, the power-saving power mode,
+  the integrated GPU while a faster one is there, or the whole CPU busy. A summary goes into the game log
+  every minute, and each warning once. FPS comes from the DirectX present events and needs administrator
+  rights (or the Performance Log Users group). *View > Game stats bar* hides it. Help page *Game stats, GPU
+  and power*.
+- **GPU & Power tab** (Windows): the PC's graphics cards with their driver version and date, the card the running
+  game renders on, and Windows' graphics setting for the selected game (Let Windows decide / Power saving / High
+  performance, with the card each one picks). It is the setting of *Settings > System > Display > Graphics*; other
+  entries Windows keeps for the exe are left alone. A change while the game runs offers *Restart game*.
+- **Driver update check**: for an NVIDIA card the tab asks NVIDIA's driver lookup for the newest Game Ready driver
+  and shows *Up to date* or *Update available*; Intel and AMD get a button to their driver page.
+- **Power plan and power mode** on the same tab: every power plan (also the hidden ones, like *Power saver*) and
+  Windows' power mode (with the Balanced plan).
+- **Floating bar**: minimising the app turns it into a small always-on-top, draggable bar with the game's name,
+  FPS, CPU, GPU and the first warning; double-click or *Open* brings the window back. Ctrl+B switches to it;
+  *View > Minimize to floating bar* turns it off. It does not take the keyboard from the game.
+- **Docs for slow games and FPS without admin.** Help, README and *Logs and troubleshooting* now explain the two
+  common causes of a slow game on a laptop (on battery; the integrated GPU) and advise setting games to *High
+  performance*: a graphics driver update can change what *Let Windows decide* picks (seen after an NVIDIA update:
+  GeForce -> Intel UHD). Step-by-step: adding your account to *Performance Log Users* (by the group's SID, so it
+  works in every Windows language), signing in again, checking it, and undoing it.
+- **Display tab: the PC's display settings in the app** (Windows). Per monitor: resolution, refresh rate
+  and orientation (kept only if confirmed within 15 seconds), scale, HDR, brightness (laptop panel through
+  WMI, external monitors through DDC/CI), colour profile, and the display arrangement (PC screen only /
+  Duplicate / Extend / Second screen only, also confirmed). *Night light...* opens its Windows Settings
+  page. On Linux the tab says it is not available yet.
+- **A game's own display settings.** *While the game runs* on the Display tab: resolution, refresh rate,
+  HDR, scale and brightness for the selected game, applied on Start / Restart before the game starts and
+  undone when it closes (or did not start within 3 minutes, on *Restore now*, or when the app closes).
+  The undo record is kept in `windowmanager.ini`, so a crash is undone at the next start. Help page
+  *Display settings*.
 - Help page *Linux (beta)* (in the app under Help and on the MkDocs site): what works on Bazzite with Proton
   games, what does not yet, and how to build it. Linux notes on the downscaled view, window styles and
   shortcuts pages. The MkDocs site gets a *Development* section with the Linux port and HelixSR 2.x notes.
@@ -18,6 +51,24 @@ Notable changes to WindowManager. The version number lives in `APP_VERSION` in `
 - `scripts/free-memory.sh` (Linux): shows what uses memory and closes browsers / IDEs before testing a game.
 
 ### Changed
+- **The window list follows the game by itself**: when the game opens, closes, moves or resizes a window (at once on
+  Windows through the game watch, otherwise every 3 seconds), without a log line each time. A window you picked
+  stays active while it exists; when it closes, the best remaining one becomes active. Before, the list only
+  changed on **Scan**, so actions could go to a window the game had already replaced.
+- **The active window stands out**: its row is green and bold, with Status *Active*, also when the list does not
+  have the focus.
+- **WindowManager runs once.** Starting it again brings the running copy to the front, also out of the floating
+  bar, instead of opening a second one (two copies managed the same game and wrote every log line twice).
+- **The app keeps off the game's monitor** (*View > Keep this app off the game's monitor*, on by default): when the
+  game's window or the downscaled view is on the app's monitor, the app moves to the other one.
+- **Ctrl+Alt+M releases the mouse** from a game that holds it (Unreal Engine games such as Tekken 7 do while they
+  have the focus) and brings the app to the front, from anywhere. Also *View > Release the mouse*.
+- **More in the game log for games that fight over their window, focus or mouse** (Windows). While a game runs,
+  the log gets each of the game's windows (shown, resized, moved, frame, hidden, closed), every change of the
+  foreground window (the game, this app, or another program by exe name only) and whether the mouse is locked.
+  The downscaled view logs its layout (monitor, overlay and its display scale, game window, drawn area, picture)
+  when it changes, each time it puts the game window back, and when it gives up. For diagnosing Tekken 7's start
+  screen, its quarter picture in the downscaled view, and the mouse lock.
 - No more nightly builds: the *Nightly / Beta* workflow (pre-releases from `develop` and `test-v*` tags) is
   removed. Releases come from `main` only.
 - **The HelixSR tab lists every game.** Games without an AMD FSR 3.1 DLL are greyed out and cannot be
@@ -30,6 +81,17 @@ Notable changes to WindowManager. The version number lives in `APP_VERSION` in `
 - Snapshots go through `PlatformBackend::captureWindow` (on Windows the same screen capture as before).
 
 ### Fixed
+- **Downscaled view drawn far too small (or too big)** on a monitor with another display scale: the black overlay
+  was resized by Windows / Qt (seen at 640 x 480 on a 1920 x 1080 monitor). It is now pinned to the monitor.
+- **Downscaled view gave up after 5 corrections.** Tekken 7 sets its window back to 1280 x 720 every time it gets
+  the focus; the view now puts it back every time, and only follows the game when it resizes more than 5 times
+  within 10 seconds.
+- The *Integrated GPU* warning fired while a game's splash screen started, although the game itself rendered on
+  the dedicated GPU. It now waits until the game uses the GPU (10 % or more).
+- **The Linux build failed** since the Display tab: its `Display` namespace clashed with X11's `Display` type,
+  which Qt's `QGuiApplication` header declares on Linux. The namespace is now `DisplayModel`. Checked with a
+  Linux build in WSL (Ubuntu 26.04, Qt 6.10): it builds and the 12 tests pass. The floating bar hides its stats
+  where there is no stats backend (Linux), instead of always saying "Game not running".
 - **HelixSR 2.0.0 is not set up.** Its setup, run unattended as this app does, goes on to install HelixSR
   Scaler into every game it finds and turns on frame generation, and its installer no longer has the
   functions the app's install helper calls. The app now sets up and updates HelixSR 1.x only (1.9.3) and

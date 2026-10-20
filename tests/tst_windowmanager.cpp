@@ -171,6 +171,35 @@ private slots:
         QCOMPARE(wm.activeWindow(), quintptr(20));
     }
 
+    void refreshKeepsTheChosenWindowAndFollowsChanges()
+    {
+        WindowManager wm;
+        wm.setTargetExecutable(kGame);
+        QVERIFY(wm.scanWindowsForTarget());
+        QVERIFY(!wm.refreshWindows());                  // nothing changed
+
+        wm.setActiveWindow(21);                          // the user picks the helper row
+        m_fake.find(20)->rect = Fit::Rect::fromXYWH(0, 0, 1920, 1080);   // the game resizes itself
+        QVERIFY(wm.refreshWindows());
+        QCOMPARE(wm.activeWindow(), quintptr(21));       // the choice is kept
+        QCOMPARE(wm.scannedWindows()[0].w, 1920);        // the table gets the new size
+    }
+
+    void refreshPicksAnotherWindowWhenTheActiveOneCloses()
+    {
+        WindowManager wm;
+        wm.setTargetExecutable(kGame);
+        QVERIFY(wm.scanWindowsForTarget());
+        QCOMPARE(wm.activeWindow(), quintptr(20));
+        // a splash screen closes, the real window opens (Tekken 7)
+        m_fake.wins.erase(m_fake.wins.begin() + 1);
+        m_fake.wins.push_back({22, 200, "TekkenGame", "UnrealWindow", Fit::Rect::fromXYWH(16, 16, 1280, 720),
+                               true, true, false});
+        QVERIFY(wm.refreshWindows());
+        QCOMPARE(wm.activeWindow(), quintptr(22));
+        QCOMPARE(wm.scannedWindows().size(), size_t(2));
+    }
+
     void scanReportsNoMatch()
     {
         WindowManager wm;

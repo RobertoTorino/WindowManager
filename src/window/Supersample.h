@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QtGlobal>
+
 #include <vector>
 
 #include "FitCalculator.h"
@@ -47,5 +49,23 @@ Point parkingOrigin(const std::vector<Fit::Rect>& monitors, const Fit::Rect& tar
 // Outside the picture (the black bars) it returns false, unless `clamp` is set, in
 // which case the nearest edge pixel is used (for a drag that leaves the picture).
 bool mapPoint(const Fit::Rect& dest, int gameW, int gameH, int x, int y, bool clamp, Point& out);
+
+// When to put the game window back after the game resized it. Some games reset their window to
+// their own resolution every time they get the focus (Tekken 7): that is answered every time. A game
+// that resizes again at once would start a loop, so at most kMax corrections within kWindowMs; after
+// that the view follows the game until it has been quiet for kWindowMs.
+class ReassertPolicy
+{
+public:
+    static constexpr int    kMax      = 5;
+    static constexpr qint64 kWindowMs = 10'000;
+
+    bool allow(qint64 nowMs);   // true: put it back now (counted)
+    bool gaveUp() const { return m_gaveUp; }
+
+private:
+    std::vector<qint64> m_times;   // corrections within the window
+    bool m_gaveUp{false};
+};
 
 } // namespace Supersample

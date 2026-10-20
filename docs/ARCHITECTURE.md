@@ -22,11 +22,29 @@ src/
   platform/PollingWindowStabilizer.cpp      WindowStabilizer for systems without a move hook (checks every 100 ms)
   platform/unsupported/                     Stand-ins for features a platform lacks (the downscaled view on Linux)
   window/KillPlanner.*          Pure logic: which processes belong to this session
+  window/GameWatch.h            Diagnostic log of the running game's windows, the foreground and the mouse clip
+                                (per-platform .cpp: platform/win32/Win32GameWatch.cpp, unsupported/ stand-in)
+  window/GameWatchModel.*       Pure logic: what changed about a game window, the foreground / mouse lines
   window/FitCalculator.*        Pure logic: fit-to-monitor maths (Fit::compute) and the
                                 launch-settle trigger (Fit::Trigger)
   window/Supersample.*          Pure logic: letterbox, render size, parking position
   window/SteamMatch.*           Pure logic: Steam AppID from a window class / pasted text, the launch URL, and which window is the target game
   window/SteamLibrary.*         Installed Steam games: libraryfolders.vdf / appmanifest parsing, tool filter, main-exe choice (pure, tested) and the folder scan
+  display/DisplayModel.*        Pure logic: modes / orientation, scale steps, brightness percent, WMI instance match,
+                                a game's display settings (JSON), what to change (plan) and how to undo it (Restore)
+  display/DisplayBackend.h      Interface to the system's display settings, and displayBackend()
+  display/DisplaySession.*      A game's display settings: applied before the launch, restored when the game closes
+  platform/win32/Win32Display.cpp           DisplayBackend on Windows: DisplayConfig, ChangeDisplaySettingsEx,
+                                            SetDisplayConfig, WMI + DDC/CI brightness, mscms colour profiles
+  platform/unsupported/DisplayUnsupported.cpp  DisplayBackend stand-in (Linux): supported() == false
+  stats/StatsModel.*            Pure logic: GPU counter instance names, GPU / CPU / frame-rate maths, the slow-game
+                                warnings, the log line; Sampler turns two raw samples in a row into GameStats
+  stats/StatsBackend.h          Interface to the game's resource use, the GPU setting, power plans / mode, and statsBackend()
+  stats/DriverModel.*           Pure logic: installed driver per card, NVIDIA's version number, NVIDIA lookup ids / answer
+  stats/DriverCheck.*           Asks NVIDIA's driver lookup for the newest driver (Qt Network)
+  platform/win32/Win32Stats.cpp StatsBackend on Windows: process times / memory, PDH GPU counters, DXGI adapters,
+                                an ETW real-time session for present events, power status and plan
+  platform/unsupported/StatsUnsupported.cpp    StatsBackend stand-in (Linux): supported() == false, no bar
   helix/HelixRelease.*          Pure logic: versions, GitHub release parsing, checksums, update decision
   helix/HelixGame.*             Pure logic: where a game's FSR 3.1 DLLs are, installed / replaced state
   helix/HelixPaths.*            Pure logic: on-disk layout, built-package marker, post-build leftovers
@@ -46,6 +64,13 @@ src/
   ui/HelpDialog.*               Help > Help topics: topic list + search over docs/help/*.md (embedded via the .qrc)
   ui/LogViewerDialog.*          File > View logs...: app and per-game log viewer
   ui/HelixPanel.*               HelixSR tab: set-up / update with a timer, list of confirmed games, run
+  ui/DisplayPanel.*             Display tab: this PC's display settings, and the selected game's own
+  ui/StatsMonitor.*             Samples the game once a second while the stats bar or the floating bar shows;
+                                logs a summary; statsUpdated() feeds the views
+  ui/StatsBar.*                 Game stats bar (a bottom QToolBar), shows StatsMonitor's samples
+  ui/MiniBar.*                  The floating bar the app minimizes to (frameless, topmost, takes no focus)
+  ui/GpuPanel.*                 GPU & Power tab: graphics cards and drivers (+ NVIDIA update check), the card in use,
+                                Windows' per-exe graphics setting, power plan and power mode
 tests/                          QtTest suites (see below)
 resources/                      Icon, arrow SVGs used by the stylesheet, Windows .rc, helixsr_driver.py
 ```
@@ -128,7 +153,9 @@ Spin boxes are styled in the same sheet; their arrows are the SVGs in `resources
         │ Start
         ▼
  ScaledView::start()
-   1. overlay: borderless, topmost, WS_EX_NOACTIVATE QWidget placed on the target monitor
+   1. overlay: borderless, topmost, WS_EX_NOACTIVATE QWidget placed on the target monitor and pinned
+      there (its WM_WINDOWPOSCHANGING forces the monitor's rectangle: a monitor with another display
+      scale made Windows / Qt resize it, once to Qt's default 640x480)
    2. game window: restore, popup style (no frame), size = render size,
       parked at Supersample::parkingOrigin()  (behind the overlay, or beyond the desktop edge)
    3. DwmRegisterThumbnail(overlay, game) with the destination rectangle from
@@ -136,7 +163,8 @@ Spin boxes are styled in the same sheet; their arrows are the SVGs in `resources
    4. SetForegroundWindow(game): keyboard / gamepad stay with the game
         │ every 400 ms
         ▼
- tick(): game gone -> stop();  restore if minimized;  re-assert size (max 5x);
+ tick(): game gone -> stop();  restore if minimized;  put the size back (Supersample::ReassertPolicy:
+         every time, but at most 5 times within 10 s, then follow the game until it is quiet);
          update the thumbnail rectangle (the game's shape may change)
  stop(): unregister thumbnail, delete overlay, restore the game's original style + rectangle
 ```
@@ -159,6 +187,108 @@ Spin boxes are styled in the same sheet; their arrows are the SVGs in `resources
   swallowed; while a button is held the overlay has mouse capture and positions are clamped to
   the picture edge so a drag can leave the picture. The game keeps keyboard focus throughout.
   Games that read the mouse via raw input, DirectInput or `GetCursorPos` cannot see posted messages.
+
+## Display settings
+
+```
+ DisplayPanel -- Apply / combos --> displayBackend() --> Win32Display
+      |                                                  (DisplayUnsupported on Linux)
+      | "While the game runs" --> AppConfig GameEntry::display (DisplayModel::GameSettings)
+      v
+ MainWindow::launchWhenFree --> DisplaySession::gameStarting(exe) --> controller.launchTarget()
+                                   1. DisplayModel::plan(mode only)  -> setMode(temporary)   (CDS_FULLSCREEN)
+                                   2. re-read, plan(the rest)    -> setHdr / setScale / setBrightness
+                                   3. DisplayModel::undoFor + merge   -> Restore, written to windowmanager.ini
+                                   every 2 s: WindowManager::isExeRunning
+                                      seen, then gone 3 ticks / never seen in 3 min -> restore()
+ restore(): resetMode (back to the stored mode), HDR, scale, brightness; also on a failed launch,
+            "Restore now", another game starting, the app closing, and recoverFromCrash() at start-up
+```
+
+- `DisplayBackend` is separate from `PlatformBackend`: that one is about the game's windows, this one
+  about the PC's monitors. Monitors are named by `DisplayModel::Monitor::id`, the monitor's device path from
+  `DISPLAYCONFIG_TARGET_DEVICE_NAME`, which survives restarts (the `\\.\DISPLAYn` name does not).
+- **Modes.** `Monitor::modes` is kept in landscape; `orientedModes` turns it into what is shown.
+  The panel applies a mode with `CDS_UPDATEREGISTRY` and asks to keep it (15 s, then the old mode is set
+  again); a game's mode uses `CDS_FULLSCREEN` (not stored) and is undone with `ChangeDisplaySettingsEx(NULL)`.
+- **HDR.** `DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2` / `SET_HDR_STATE` (Windows 11 24H2), else
+  the older advanced-colour calls. The structs are declared locally because the SDK only declares them for
+  a newer `NTDDI_VERSION`. HDR is only switched on a display that reports HDR support: on 24H2 the old call
+  would toggle Auto Color Management instead.
+- **Scale.** Undocumented `DisplayConfigGetDeviceInfo` / `SetDeviceInfo` types -3 / -4 on the source:
+  steps relative to the recommended scale (`DisplayModel::scaleFromRelative`, `kScaleSteps`). The steps depend
+  on the resolution, so a game's scale is applied after its mode, and restored after the mode is back.
+- **Brightness.** A built-in panel: WMI `root\WMI` `WmiMonitorBrightness` / `WmiSetBrightness`, matched to
+  the monitor by `DisplayModel::wmiInstanceMatches`. Otherwise DDC/CI (`dxva2`: `GetMonitorBrightness`); it is
+  slow (tens of ms per command), so the slider sends at most every 250 ms.
+- **Colour profiles.** `ColorProfileGetDisplayList` / `GetDisplayDefault` / `SetDisplayDefaultAssociation`
+  (mscms, Windows 10 1809+), looked up with `GetProcAddress`; the SDR or HDR default by the HDR state.
+- **Arrangement.** `QueryDisplayConfig(QDC_DATABASE_CURRENT)` gives the topology,
+  `SetDisplayConfig(SDC_APPLY | SDC_TOPOLOGY_*)` sets it. Night light has no API: the button opens
+  `ms-settings:nightlight`.
+- The panel reads the monitors when the tab is shown, after each change and on **Re-read**, not in
+  `refresh()` (DDC/CI reads are slow).
+
+## Game stats bar
+
+```
+ StatsMonitor (QTimer 1 s, while the stats bar or the floating bar shows)
+     -- pid --> thread pool: statsBackend().sample(pid) --> RawSample
+     pid: controller.activeWindowPid(), else WindowManager::runningPid(target) every 5 s
+     <-- queued -- Stats::Sampler::update(pid, raw, adapters) --> GameStats --> game log
+                                                               statsUpdated --> StatsBar, MiniBar, GpuPanel
+```
+
+- **CPU**: `GetProcessTimes` and `GetSystemTimes` deltas between two samples (`Stats::cpuPercent`, 100 % = all cores).
+- **GPU**: the PDH wildcard counters `\GPU Engine(*)\Utilization Percentage` and `\GPU Process Memory(*)\Dedicated
+  Usage`. Instances are named `pid_<pid>_luid_0x<high>_0x<low>_phys_0[_eng_<n>_engtype_<type>]`
+  (`Stats::parseGpuInstance`); the use is the busiest engine type summed per adapter, as in Task Manager, and the LUID
+  names the adapter through DXGI. One collection costs tens of ms, hence the thread pool.
+- **FPS**: a real-time ETW session (`WindowManager-Frames`, QPC timestamps, 1 s flush) with the DXGI provider
+  (`Present_Start` 42, `PresentMultiplaneOverlay_Start` 55) and the D3D9 provider (`Present_Start` 1), filtered to those
+  ids. The callback keeps the target pid's timestamps; `Stats::frameRate` measures up to the newest present, because events
+  arrive up to a second late. Starting the session needs administrator rights (or Performance Log Users):
+  `FpsSource::NoPermission` otherwise. A session left behind by a crash is stopped and restarted; `MainWindow::closeEvent`
+  stops it.
+- **Power**: `GetSystemPowerStatus`, `PowerGetActiveScheme` / `PowerReadFriendlyName`, and for the Balanced plan the power
+  mode from `PowerGetEffectiveOverlayScheme` (looked up with `GetProcAddress`).
+- **Graphics setting** (GPU tab): the `REG_SZ` value named after the full exe path under
+  `HKCU\Software\Microsoft\DirectX\UserGpuPreferences`, e.g. `AppStatus=4096;GpuPreference=2;`
+  (`Stats::gpuPreferenceFrom` / `withGpuPreference` change only the `GpuPreference` entry). The card each choice
+  means comes from `IDXGIFactory6::EnumAdapterByGpuPreference`. DirectX reads it when the game starts.
+- **Drivers**: DXGI gives each adapter's PCI vendor / device id; the display class key
+  `HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\NNNN` gives
+  `MatchingDeviceId`, `DriverVersion` and `DriverDate` (`Driver::matchesDevice`; re-read on every `adapters()` call).
+  NVIDIA's number is the last five digits (`32.0.16.1742` -> `617.42`). `DriverCheck` fetches
+  `lookupValueSearch.aspx?TypeID=2` (series) and `TypeID=3` (products) once per run, picks the product's notebook
+  or desktop series (a battery means notebook; `Driver::findNvidiaIds`), then `AjaxDriverService.php?func=
+  DriverManualLookup` (osID 57, DCH, WHQL) for the newest driver.
+- **Power plans**: `PowerEnumerate(ACCESS_SCHEME)` lists every plan, `PowerSetActiveScheme` switches. The power mode
+  is `PowerGetEffectiveOverlayScheme` / `PowerSetActiveOverlayScheme` (by `GetProcAddress`; Balanced plan only).
+- **Floating bar**: `MainWindow::changeEvent` sees the minimise and calls `showMiniBar()` (hide this window, show
+  the `MiniBar`); `restoreFromMiniBar()` reverses it. `MiniBar` is a top-level `Qt::Tool | FramelessWindowHint |
+  WindowStaysOnTopHint | WindowDoesNotAcceptFocus` window with `WA_ShowWithoutActivating`, so it never takes the
+  keyboard from the game; dragging uses `QWindow::startSystemMove`. `StatsMonitor` runs while either bar shows.
+- **Window list refresh**: `WindowManager::refreshWindows` re-reads the target's windows without logging, keeps the
+  active window while it exists (`bestWindow` otherwise) and says whether anything changed; the controller's
+  `refreshWindows` slot emits `statusChanged` only then. Called on `GameWatch::windowsChanged`,
+  `StatsMonitor::gameChanged`, and every 3 s while this window is shown. `scanWindowsForTarget` (Scan) still picks
+  the best window. The table marks the active row (bold, Status *Active*; green selection in `Theme.cpp`).
+- **One instance** (`main.cpp`): a `QLocalServer` named after the user and a hash of the install folder. A second
+  start connects, sends `show` (after `AllowSetForegroundWindow`) and exits; the first calls `MainWindow::bringToFront`.
+  A copy in another folder (a test build) is a separate instance.
+- **Off the game's monitor**: `MainWindow::keepOffGameMonitor` runs 400 ms after a controller status change, a
+  `GameWatch::windowsChanged` or the downscaled view starting / stopping; if this window is on the game's monitor
+  (`gameMonitorIndex`: the view's monitor while it runs, else the active window's) it moves to another one.
+- **Release the mouse**: the global hotkey Ctrl+Alt+M (`RegisterHotKey`, like Ctrl+Alt+D) calls `ClipCursor(nullptr)`
+  and `bringToFront`; a game that holds the mouse lets go once it loses the foreground.
+- **Game watch** (diagnostics, Windows): `StatsMonitor::gameChanged(pid)` starts `GameWatch::watch(pid)` (0 stops it).
+  It installs out-of-context WinEvent hooks: `EVENT_OBJECT_CREATE`..`HIDE` and `EVENT_OBJECT_LOCATIONCHANGE` for the
+  game's process (top-level windows only, read 300 ms after the last report), and `EVENT_SYSTEM_FOREGROUND` for all
+  processes; `GetClipCursor` is read every second. `Watch::WindowTracker` turns the readings into change lines.
+  The downscaled view logs its own layout (`ScaledView layout:`) from `updateThumbnail`, on change only.
+- `Stats::warningsFor` decides the warnings; the bar logs each once per game run and a `summaryLine` 10 s after the game is
+  first seen and then every minute.
 
 ## HelixSR
 
@@ -222,13 +352,17 @@ unit-tested directly.
 |---|---|
 | `tst_utilities` | name sanitising, unique ids, string/path helpers, size formatting |
 | `tst_killplanner` | session scoping: unrelated loaders spared, descendants, orphans, pid reuse, ignore list |
+| `tst_gamewatch` | the watch's lines: first sight of a window (hidden helpers left out until shown), size / place / frame / visibility / title changes, unchanged and class-only changes not logged, closed windows, other programs' titles kept out of the foreground line, mouse clip vs. free |
 | `tst_fit` | fit maths (framed, borderless, negative-origin monitor, overscan, applied plan is stable) and the settle trigger (fires once, restarts on move/new window, ignores unusable windows, times out) |
-| `tst_supersample` | letterbox (side bars, top/bottom bars, never exceeds the area), render size per factor and shape, parking position (behind the overlay vs beyond the desktop, with a monitor above/next to it), mouse mapping (pixel centres, black bars ignored, clamping while dragging, never past the last pixel) |
+| `tst_supersample` | letterbox (side bars, top/bottom bars, never exceeds the area), render size per factor and shape, parking position (behind the overlay vs beyond the desktop, with a monitor above/next to it), mouse mapping (pixel centres, black bars ignored, clamping while dragging, never past the last pixel), putting the game window back (every focus change; a fast loop stopped, then tried again after 10 s) |
 | `tst_steammatch` | AppID from `steam_app_<id>` classes and pasted text (store URL, run URL, bare number), AppID beats a Wine loader image, another Steam game never matches, path / exe-name fallback |
-| `tst_windowmanager` | `WindowManager` and `MonitorHelper` against a fake `PlatformBackend`: which windows a scan keeps and their order, borderless fullscreen, centring on another monitor, missing monitors, toggle messages, kill scope |
+| `tst_windowmanager` | `WindowManager` and `MonitorHelper` against a fake `PlatformBackend`: which windows a scan keeps and their order, the quiet refresh (keeps a chosen window, follows a resize, a closed splash screen replaced by the game window), borderless fullscreen, centring on another monitor, missing monitors, toggle messages, kill scope |
 | `tst_steamlibrary` | `libraryfolders.vdf` (current and old format, Windows paths), appmanifest fields / install state / escapes, tool filter, main-exe choice (redistributables, crash reporters, Unreal shipping exe), a fake Steam folder with two libraries, and the sync into the saved games (add, keep the user's name, AppID for a game added by hand, uninstalled vs. drive not connected, moved exe) |
 | `tst_x11backend` | Linux only: the real X11 backend against an xterm (list, title, pid, move/resize, frame strip/restore, process info, terminate); skips itself without a display |
 | `tst_appconfig` | save/load round-trip, clearing profiles, corrupt/missing files, legacy keys, the HelixSR flag |
+| `tst_display` | mode lists (sizes, refresh rates, best mode, portrait), scale steps relative to the recommended one, brightness percent, WMI instance matching, a game's display settings (JSON, sanitising, description), choosing the monitor, the plan (only what differs and the display supports) and the undo record (first value wins, JSON); on Windows a read-only probe of this PC's displays is printed |
+| `tst_stats` | GPU counter instance names, busiest engine and video memory per process, CPU percent, frame rate and 1 % low (late and out-of-order presents, stale), dedicated adapter, the warnings, short GPU names, reading / editing the graphics-setting value, the floating bar's line, driver matching / dates / NVIDIA versions,
+NVIDIA lookup ids (notebook vs desktop) and its answer, the log line, the sampler across samples and processes; on Windows a live sample of the test process is printed |
 | `tst_helix` | version parsing/ordering, release choice (no prereleases, the right zip), checksums, update decision, DLL version, game root, FSR DLL detection and installed / replaced state, async scan delivery, built-package marker and driver fingerprint, post-build leftovers, helixsr.ini parsing and in-place editing, GPU family and the can-this-PC-run-it verdict (a live probe of the test machine is printed too) |
 
 The UI and the real OS backend (`platform/win32/`) are not unit-tested; they are checked by running the

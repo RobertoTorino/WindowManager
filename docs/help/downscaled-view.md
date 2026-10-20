@@ -30,6 +30,13 @@ as it was.
 - While running, the game window loses its borders and is parked behind the overlay. This
   app stays above the overlay so you can still use it.
 - **Stability** is switched off when the view starts.
+- Some games set their window back to their own resolution after start-up, or every time they get
+  the focus (Tekken 7 goes back to its 1280 x 720 setting). The view puts the window back each time.
+  If a game does that more than 5 times within 10 seconds, the view follows the game's size until it
+  has been quiet for 10 seconds, so the two do not fight. Setting the game's own resolution to the
+  monitor's avoids it altogether.
+- The black overlay always covers exactly the chosen monitor, also on a monitor with another display
+  scale than the one the app or the game is on.
 - It costs GPU power and video memory. Render sizes above 16384 pixels are refused.
 - Windowed and borderless games only. If the game runs as administrator, run this app as
   administrator too.

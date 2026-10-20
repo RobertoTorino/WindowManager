@@ -21,6 +21,7 @@ public:
         int y{0};
         int w{0};
         int h{0};
+        bool operator==(const WindowInfo&) const = default;
     };
 
     WindowManager() = default;
@@ -73,6 +74,10 @@ public:
     quintptr activeWindow() const;
 
     bool scanWindowsForTarget();
+    // Re-reads the target's windows without logging. Keeps the active window while it exists (also one
+    // the user picked), else picks the best one. True when the list or the active window changed.
+    bool refreshWindows();
+
     bool applySavedProfile();
     bool saveCurrentPosition();
     bool moveToMonitor(int monitorIndex);
@@ -109,6 +114,7 @@ public:
     bool killTarget();
     bool isTargetRunning() const;   // a process runs the target exe (not for .bat/.cmd)
     static bool isExeRunning(const QString& exePath);   // .bat/.cmd: its remembered game exe
+    static qint64 runningPid(const QString& exePath);   // a process running it; 0: none
     static QString realExePath(const QString& exePath); // the exe itself, or a script's game exe ("" if unknown)
 
     // Batch-launch child detection

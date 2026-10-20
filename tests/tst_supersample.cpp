@@ -188,6 +188,30 @@ private slots:
         QVERIFY(!mapPoint(Rect{}, 3160, 2160, 5, 5, true, p));
         QVERIFY(!mapPoint(Rect::fromXYWH(0, 0, 100, 100), 0, 0, 5, 5, true, p));
     }
+
+    // --- putting the game window back ------------------------------------------------------
+
+    void reassertsEveryFocusChange()
+    {
+        // Tekken 7: back to 1280x720 each time it gets the focus, seconds apart. Always answered.
+        Supersample::ReassertPolicy p;
+        for (int i = 0; i < 20; ++i)
+            QVERIFY(p.allow(qint64(i) * 3000));
+        QVERIFY(!p.gaveUp());
+    }
+
+    void stopsAFastLoopThenTriesAgain()
+    {
+        Supersample::ReassertPolicy p;
+        for (int i = 0; i < Supersample::ReassertPolicy::kMax; ++i)
+            QVERIFY(p.allow(1000 + i * 100));
+        QVERIFY(!p.allow(1600));   // the sixth within 10 s: follow the game
+        QVERIFY(p.gaveUp());
+        QVERIFY(!p.allow(5000));
+        // quiet for 10 s after the last correction: try again
+        QVERIFY(p.allow(1400 + Supersample::ReassertPolicy::kWindowMs + 1));
+        QVERIFY(!p.gaveUp());
+    }
 };
 
 QTEST_APPLESS_MAIN(TstSupersample)

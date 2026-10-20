@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../display/DisplayModel.h"
+
 #include <optional>
 #include <QHash>
 #include <QList>
@@ -31,6 +33,7 @@ public:
         bool    helixConfirmed{false};   // an FSR 3.1 DLL was found the last time: HelixSR can be used
         QString childExePath;            // .bat/.cmd games: the game exe the script started last time
         quint32 steamAppId{0};           // found in a Steam library: started through Steam; 0 = not
+        DisplayModel::GameSettings display;   // display settings while the game runs (Display tab)
     };
 
     struct WindowProfile

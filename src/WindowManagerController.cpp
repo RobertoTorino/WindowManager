@@ -93,6 +93,16 @@ WindowManagerController::VisibilityState WindowManagerController::queryActiveWin
     return v;
 }
 
+qint64 WindowManagerController::activeWindowPid() const
+{
+    const quintptr hwnd = m_windowManager.activeWindow();
+    for (const auto& w : m_windowManager.scannedWindows()) {
+        if (hwnd && w.hwnd == hwnd)
+            return w.pid;
+    }
+    return 0;
+}
+
 const std::vector<WindowManager::WindowInfo>& WindowManagerController::scannedWindows() const
 {
     return m_windowManager.scannedWindows();
@@ -115,6 +125,14 @@ void WindowManagerController::setTargetExecutable(const QString& exePath)
 void WindowManagerController::scanWindows()
 {
     finish(m_windowManager.scanWindowsForTarget(), "Scan complete", "Scan failed");
+}
+
+void WindowManagerController::refreshWindows()
+{
+    if (!m_windowManager.refreshWindows())
+        return;
+    syncStabilizerTarget();
+    emit statusChanged();
 }
 
 void WindowManagerController::applySavedSettings()
@@ -295,7 +313,7 @@ void WindowManagerController::resetAll()
     finish(m_windowManager.resetAll(), "Window reset to defaults", "Reset failed");
 }
 
-void WindowManagerController::launchTarget()
+bool WindowManagerController::launchTarget()
 {
     const bool isBatch =
         m_windowManager.targetExecutable().endsWith(".bat", Qt::CaseInsensitive) ||
@@ -321,6 +339,7 @@ void WindowManagerController::launchTarget()
         m_batchPollTimer->start();
         publishStatus("Batch launched - scanning for game process...");
     }
+    return ok;
 }
 
 void WindowManagerController::onBatchPollTick()

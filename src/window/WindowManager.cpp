@@ -140,6 +140,51 @@ quintptr WindowManager::activeWindow() const
     return m_activeWindow;
 }
 
+namespace {
+
+// Visible before hidden, then the largest first.
+void sortWindows(std::vector<WindowManager::WindowInfo>& windows)
+{
+    std::sort(windows.begin(), windows.end(), [](const auto& a, const auto& b) {
+        if (a.visible != b.visible) return a.visible > b.visible;
+        return static_cast<qint64>(a.w) * a.h > static_cast<qint64>(b.w) * b.h;
+    });
+}
+
+// The first visible window with a usable rectangle, else the first one.
+quintptr bestWindow(const std::vector<WindowManager::WindowInfo>& windows)
+{
+    for (const auto& win : windows) {
+        if (win.visible && !hasInvalidGeometry(win.x, win.y, win.w, win.h))
+            return win.hwnd;
+    }
+    return windows.empty() ? 0 : windows.front().hwnd;
+}
+
+} // namespace
+
+bool WindowManager::refreshWindows()
+{
+    if (m_targetExePath.trimmed().isEmpty())
+        return false;
+    auto windows = windowsOfTarget(m_targetExePath);
+    sortWindows(windows);
+
+    quintptr active = m_activeWindow;
+    const bool stillThere = std::any_of(windows.begin(), windows.end(),
+                                        [active](const WindowInfo& w) { return w.hwnd == active; });
+    if (!stillThere) {
+        active = bestWindow(windows);
+        if (active != m_activeWindow)
+            Logger::instance().info("Active window " + std::to_string(m_activeWindow) + " is gone; now " +
+                                    std::to_string(active), "WindowManager");
+    }
+    const bool changed = windows != m_scanned || active != m_activeWindow;
+    m_scanned = std::move(windows);
+    m_activeWindow = active;
+    return changed;
+}
+
 bool WindowManager::scanWindowsForTarget()
 {
     m_scanned.clear();
@@ -155,20 +200,10 @@ bool WindowManager::scanWindowsForTarget()
         "Scanning windows for: " + m_targetExePath.toStdString(), "WindowManager");
 
     m_scanned = windowsOfTarget(m_targetExePath);
-
-    std::sort(m_scanned.begin(), m_scanned.end(), [](const WindowInfo& a, const WindowInfo& b) {
-        if (a.visible != b.visible) return a.visible > b.visible;
-        return static_cast<qint64>(a.w) * a.h > static_cast<qint64>(b.w) * b.h;
-    });
+    sortWindows(m_scanned);
 
     if (!m_scanned.empty()) {
-        m_activeWindow = m_scanned.front().hwnd;
-        for (const auto& win : m_scanned) {
-            if (win.visible && !hasInvalidGeometry(win.x, win.y, win.w, win.h)) {
-                m_activeWindow = win.hwnd;
-                break;
-            }
-        }
+        m_activeWindow = bestWindow(m_scanned);
         m_lastMessage = QString("Found %1 window(s) for target executable.").arg(m_scanned.size());
         Logger::instance().info(
             "Scan found " + std::to_string(m_scanned.size()) + " window(s). Active HWND: " +
@@ -853,9 +888,14 @@ QString WindowManager::realExePath(const QString& exePath)
 
 bool WindowManager::isExeRunning(const QString& exePath)
 {
+    return runningPid(exePath) != 0;
+}
+
+qint64 WindowManager::runningPid(const QString& exePath)
+{
     const QString real = realExePath(exePath);
     if (real.trimmed().isEmpty())
-        return false;
+        return 0;
     const QString wanted = QDir::toNativeSeparators(QFileInfo(real).absoluteFilePath()).toLower();
 
     PlatformBackend& os = platform();
@@ -864,9 +904,9 @@ bool WindowManager::isExeRunning(const QString& exePath)
             continue;
         const QString path = os.processImagePath(proc.pid);
         if (!path.isEmpty() && QDir::toNativeSeparators(path).toLower() == wanted)
-            return true;
+            return proc.pid;
     }
-    return false;
+    return 0;
 }
 
 bool WindowManager::killTarget()

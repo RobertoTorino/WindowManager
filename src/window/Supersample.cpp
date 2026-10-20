@@ -84,4 +84,20 @@ bool mapPoint(const Fit::Rect& dest, int gameW, int gameH, int x, int y, bool cl
     return true;
 }
 
+bool ReassertPolicy::allow(qint64 nowMs)
+{
+    const qint64 from = nowMs - kWindowMs;
+    std::erase_if(m_times, [from](qint64 t) { return t <= from; });
+    if (m_gaveUp && m_times.empty())
+        m_gaveUp = false;   // quiet for a whole window: try again
+    if (m_gaveUp)
+        return false;
+    if (int(m_times.size()) >= kMax) {
+        m_gaveUp = true;
+        return false;
+    }
+    m_times.push_back(nowMs);
+    return true;
+}
+
 } // namespace Supersample

@@ -43,6 +43,9 @@ QTableWidget {
     gridline-color: #2c2e32; border: 1px solid #3a3d41; border-radius: 4px;
     selection-background-color: #0f7b7b; selection-color: white;
 }
+/* The window list shows the active window as its selected row, in the "active" green, also without focus */
+QTableWidget#windowTable { selection-background-color: #1b8a4b; selection-color: white; }
+QTableWidget#windowTable::item:selected { background: #1b8a4b; color: white; }
 QHeaderView::section {
     background: #2a2c30; color: #b5b8bd; padding: 5px 8px;
     border: none; border-right: 1px solid #1e1f22; font-weight: 600;
@@ -92,6 +95,11 @@ QToolTip { background: #25272b; color: #e6e6e6; border: 1px solid #3a3d41; }
 QLabel#hint { color: #8b8f95; }
 QLabel#fitDelta { font-size: 15px; font-weight: 600; color: #e6e6e6; }
 QLabel#fitOk { color: #2fb86a; font-weight: 600; }
+QToolBar#statsBar { background: #17181a; border: none; border-top: 1px solid #2c2e32; padding: 3px 6px; }
+QLabel#statValue { color: #e6e6e6; }
+QWidget#miniBar { background: #17181a; border: 1px solid #3a3d41; }
+QLabel#miniGame { color: #e6e6e6; font-weight: 600; }
+QLabel#statValue[warning="true"], QLabel#statWarn { color: #e8a33c; font-weight: 600; }
 )qss";
 
 } // namespace
@@ -140,6 +148,15 @@ void setActive(QAbstractButton* button, bool active)
     button->setProperty("active", active);
     button->style()->unpolish(button);
     button->style()->polish(button);
+}
+
+void setWarning(QWidget* widget, bool warning)
+{
+    if (!widget || widget->property("warning").toBool() == warning)
+        return;
+    widget->setProperty("warning", warning);
+    widget->style()->unpolish(widget);
+    widget->style()->polish(widget);
 }
 
 } // namespace Theme

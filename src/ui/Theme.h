@@ -14,6 +14,7 @@ class QWidget;
  *
  *   role   = "accent" | "danger"   (button emphasis)
  *   active = true                  (toggle button currently "on")
+ *   warning = true                 (a stats bar value that explains a slow game)
  */
 namespace Theme {
 
@@ -25,5 +26,8 @@ QPushButton* button(const QString& text, QWidget* parent,
 
 // Marks a toggle-style button as on/off (re-polishes only when it changes).
 void setActive(QAbstractButton* button, bool active);
+
+// Marks a value label as a warning (same re-polish rule as setActive).
+void setWarning(QWidget* widget, bool warning);
 
 } // namespace Theme

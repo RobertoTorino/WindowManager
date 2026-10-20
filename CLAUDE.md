@@ -34,7 +34,7 @@ cmake, ninja, clang, gcc, qt6-qtbase-devel, qt6-qttools-devel, libX11/xcb devel 
 
 - Configure: `cmake -S . -B build/linux -G Ninja -DCMAKE_BUILD_TYPE=Debug`
 - Build: `cmake --build build/linux`
-- Tests: `ctest --test-dir build/linux --output-on-failure` (10 tests; `tst_x11backend` runs for real against XWayland)
+- Tests: `ctest --test-dir build/linux --output-on-failure` (11 tests; `tst_x11backend` runs for real against XWayland)
 - Before testing a game: `scripts/free-memory.sh [--close]` (the machine has 9.4 GB of RAM next to 6 GB of VRAM).
   KDE asks before `xdotool` may send input; the user decides that prompt.
 
@@ -62,7 +62,75 @@ The desktop is KDE Plasma on Wayland. The X11 backend only sees XWayland windows
   borderless full screen and back, focus, snapshot, start-while-running guard and Shutdown all work.
   TEKKEN 7 and Split/Second do not start: their Steam launch options run a missing
   `bc250-bazzite-test` wrapper (the user's Steam setting, not this app).
+- Display tab (2026-10-19, Windows only): built, 10 tests pass, `tst_display` reads this PC's displays
+  correctly (laptop panel 1920x1080, 125 %, brightness 100 %, no HDR). **Not tried in the running app yet:**
+  changing a setting, the 15 s keep-or-revert box, DDC/CI on an external monitor, HDR, a game's settings
+  being applied on Start and restored on exit. The scale uses an undocumented DisplayConfig call.
+- Game stats bar (2026-10-20, Windows only): built, 11 tests pass, `tst_stats` reads this laptop (both adapters
+  with their LUIDs, CPU, RAM, on battery). FPS needs admin: **not tried yet** elevated, nor with a running game
+  (GPU %, adapter name, the warnings, the log lines). Made after Silent Hill f ran slowly: the laptop was on
+  battery (unplugged at 00:12, game started 00:28); the app's logs showed nothing wrong.
+- GPU & Power tab, driver check, power plans, floating bar (2026-10-20, Windows only): built, 11 tests pass,
+  screenshots checked; the live NVIDIA lookup says 617.42 is current; minimize -> floating bar -> Open -> exit
+  works (UI Automation). After the NVIDIA driver update (01:21) Windows maps *Let Windows decide* to the Intel
+  UHD (before: GTX 1650), so games without a setting may render on Intel. **Not tried yet:** changing the GPU
+  setting / power plan / power mode from the tab, the floating bar over a running game, the right-click Exit.
+  The user is now in Performance Log Users (FPS without admin after signing in again; not seen yet).
+  The user has a second monitor attached (may be used for tests).
+- Linux build check from this PC (2026-10-20): WSL `Ubuntu-26.04` has cmake, ninja, g++ and Qt 6.10; build dir
+  `~/wm-build` (source `/mnt/c/development/WindowManager`): `wsl.exe -d Ubuntu-26.04 -- bash -lc 'cd ~/wm-build &&
+  cmake --build . -j16 && QT_QPA_PLATFORM=offscreen ctest --output-on-failure'`. Builds, 13 tests pass. It found
+  the `Display` namespace clash with Xlib (now `DisplayModel`): never name anything `Display`, `Window`, `Screen`,
+  `Status`, `Bool` or `None` at namespace scope. Next Linux steps: docs/LINUX_PORT.md, *Next steps*.
+- Tekken 7 (2026-10-20): game watch (`Watch` lines) and the view's layout lines; the user's session showed two app
+  copies running, the overlay at Qt's 640x480 on monitor 2 (tiny picture), and Tekken resetting its window to
+  1280x720 on every focus. Fixed: one instance (QLocalServer), overlay pinned (WM_WINDOWPOSCHANGING),
+  `Supersample::ReassertPolicy`, Ctrl+Alt+M releases the mouse, the app keeps off the game's monitor, the integrated
+  GPU warning waits for 10 % GPU. Checked in a scratch copy with charmap (single instance from the floating bar,
+  overlay 1920x1080 on monitor 2, app moved off monitor 2). **Not tried yet:** Ctrl+Alt+M against a game holding
+  the mouse, all of it with Tekken. Tekken here is the arcade build started through JConfig: its *DX Window Mode*
+  settings (resolution 1280x720, window 1280x720 at 16,16) are what resets the window; the user should set them to
+  the monitor (or a higher DX resolution with a 1920x1080 window to supersample).
+- Window list (2026-10-20): follows the game by itself (`refreshWindows`: watch events + every 3 s, quiet), the
+  active row is green / bold / "Active". Checked in the scratch copy with charmap (row moved 100,100 -> 400,300
+  without Scan).
 - Ideas, not started: a toolbar button for the log viewer (there is no settings dialog), more detailed logging inside `WindowManager.cpp`, a GitHub Pages workflow for the MkDocs site.
+
+## Where we left off (2026-10-20)
+
+Open work, in this order. Windows: 12 tests, Linux (WSL): 13 tests, all passing; nothing committed by Claude.
+
+1. **Tekken 7 retest by the user.** Tekken here is the arcade build (TEKKEN 7 Fated Retribution R2) started through
+   **JConfig**; its *DX Window Mode* fields (resolution 1280x720, window 1280x720 at 16,16) reset the window on
+   every focus. Advised: set them to the monitor (1920x1080 at 0,0; monitor 2 is at 0,-1080), or a higher DX
+   resolution with a 1920x1080 window to supersample. Then check in `logs/TEKKEN7FRR2.log`: `Watch` lines (no more
+   1280x720 resets), `ScaledView layout` (overlay = monitor), Ctrl+Alt+M with the mouse held, FPS in the stats bar
+   (the user is in Performance Log Users since 2026-10-20; not seen working yet), the app moving off the game's
+   monitor, one instance only.
+2. **Game session reports** (decided with the user): a **tab first** (a separate window maybe later); per session
+   one **JSON** (`reports/<game>/<date-time>.json`, `schemaVersion`), a row in **`reports/sessions.csv`**, and a
+   **per-second samples CSV** (for charts later); "where it was played" is a **label the user chooses** (no PC
+   name). Content: game (name, exe name, Steam AppID), start / end / time played, app version, CPU / RAM / GPUs +
+   drivers / Windows version, monitor (resolution, refresh, scale, HDR), game window (monitor, rect, mode,
+   downscale factor), GPU setting, power plan / mode / share on battery, FPS avg / 1 % / 0.1 % lows, frame-time
+   percentiles, CPU / GPU avg + peak, RAM / VRAM peak, the card it rendered on, warnings with durations, app actions
+   with timestamps. **No private data:** no user names or paths with the user folder, no PC name, IP, MAC or
+   monitor serials. Phases: (1) recorder + files, pure parts tested; (2) the tab (list, details); (3) compare two
+   sessions + a self-drawn FPS chart (no Qt Charts).
+3. **Global hotkeys like in Nexus** (the app this one came from): the user wants hotkeys that work while the game
+   has the focus, for Focus and others. Only Ctrl+Alt+D and Ctrl+Alt+M are global now. Ask the user which ones.
+4. Maybe: offer Unreal Engine's own supersampling (`r.ScreenPercentage` in `Engine.ini`) instead of the downscaled
+   view for UE games.
+5. **Linux** on the Bazzite machine: docs/LINUX_PORT.md, *Next steps* (stats backend, floating bar under KWin,
+   AppImage).
+
+**Testing without touching the user's setup:** copy `WindowManager.exe`, the Qt DLLs and the plugin folders
+(`generic iconengines imageformats networkinformation platforms styles tls`) from the build dir to a temporary folder
+with its own `windowmanager.json` (a game entry for `C:/Windows/System32/charmap.exe` as `lastExePath`). The single
+instance is keyed by the install folder, so that copy runs next to the user's. Drive it with UI Automation and
+screenshot it with `PrintWindow`; read its own `windowmanager.log`. A foreground test window takes keyboard focus,
+so keystrokes the user types may land in it. The user's second monitor (1920x1080 at 0,-1080, 100 %) may be used.
+If the user's own app blocks the link, close it with `CloseMainWindow` first (it saves its settings).
 
 ## Bugs found on Linux that also affect Windows
 

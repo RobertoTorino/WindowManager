@@ -20,6 +20,7 @@ public:
     QString targetExecutable() const;
     bool stabilizerEnabled() const;
     quintptr activeWindow() const;
+    qint64 activeWindowPid() const;   // the game's process; 0: no window chosen
     const std::vector<WindowManager::WindowInfo>& scannedWindows() const;
         int activeWindowMonitorIndex() const;
 
@@ -52,6 +53,7 @@ public slots:
     void requestFitCheck();   // propose a fit now for the current window
     void setTargetExecutable(const QString& exePath);
     void scanWindows();
+    void refreshWindows();   // quiet: no status text, no log; statusChanged() only when something changed
     void applySavedSettings();
     void saveCurrentPosition();
     void moveToMonitor1();
@@ -87,7 +89,7 @@ public slots:
     void resetAll();
 
     // Process control
-    void launchTarget();
+    bool launchTarget();
     void killTarget();
     bool isTargetRunning() const { return m_windowManager.isTargetRunning(); }
     static bool isRunning(const QString& exePath) { return WindowManager::isExeRunning(exePath); }

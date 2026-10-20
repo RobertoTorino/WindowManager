@@ -8,11 +8,19 @@ Shows title, class, visibility, process id and rectangle of each window of the t
 Hidden windows are dimmed. If it is empty it says why: no game selected, or no windows
 found yet (start the game, then press **Scan**).
 
+The **active window**, the one every button and tab acts on, is the green, bold row with Status
+*Active*. Click another row to make that one active.
+
+The table follows the game by itself: when the game opens, closes, moves or resizes a window (at
+once on Windows, otherwise within 3 seconds). A window you picked stays active as long as it exists;
+when it closes, the best remaining window (visible, largest) becomes active. **Scan** reads the list
+again on demand and picks the best window.
+
 ## Action row
 
 | Button | What it does |
 |---|---|
-| **Scan** | Refresh the table. |
+| **Scan** | Read the window list again and pick the best window (the list also follows the game by itself). |
 | **Monitor 1 / Monitor 2** | Move the window to that monitor. The current one is green. Ctrl+S toggles. |
 | **Stability** | While on, a window that the game moves or resizes is put back where you set it. |
 | **Focus** | Bring the game window to the front. |

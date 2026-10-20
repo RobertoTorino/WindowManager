@@ -38,6 +38,7 @@ public:
 
     bool isRunning() const { return m_running; }
     QString description() const { return m_description; }
+    int monitorIndex() const { return m_running ? m_monitorIndex : 0; }   // the monitor it covers; 0: not running
 
     bool start(const Options &options, QString *error = nullptr);
     void stop(const QString &reason = {});
@@ -65,6 +66,7 @@ private:
     int     m_gameW{0};      // the game's client size, for mapping
     int     m_gameH{0};
     QString m_description;
+    int     m_monitorIndex{0};
     QTimer *m_timer;
     QWidget *m_overlay{nullptr};
 };

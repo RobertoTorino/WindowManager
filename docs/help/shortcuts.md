@@ -8,5 +8,7 @@
 | Ctrl+F | Fit window to monitor... |
 | Ctrl+L | View logs... |
 | Ctrl+M | Move this app's window to the other monitor |
+| Ctrl+B | Switch to the floating bar |
 | Ctrl+Alt+D | Stop the downscaled view (works even when this app is not focused). Windows only. |
+| Ctrl+Alt+M | Release the mouse from a game that holds it, and bring this app to the front (works from anywhere). Windows only. |
 | Ctrl+Q | Exit |

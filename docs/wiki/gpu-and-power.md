@@ -23,7 +23,7 @@ renders. The **GPU & Power** tab shows:
   - *Let Windows decide*: Windows chooses. This is not always the fast card (see below).
   - *Power saving*: the processor's graphics.
   - *High performance*: the dedicated card.
-- **Renders on now**: the card the running game actually uses (needs the stats bar shown).
+- **Renders on now**: the card the running game actually uses (while the game runs).
 
 **Set your games to High performance.** What *Let Windows decide* picks can change without warning. On a
 laptop with an Intel UHD and a GeForce GTX 1650 it meant the GTX 1650, but after an NVIDIA driver update it
@@ -56,5 +56,5 @@ The **Power** part of the tab has the same choices as *Control Panel > Power Opt
 
 **Power options...** opens the Control Panel page, for editing a plan's own settings.
 
-The [game stats bar](game-stats.md) warns when a game runs on the integrated GPU, on battery or in a
+The [game info overlay](game-stats.md) warns when a game runs on the integrated GPU, on battery or in a
 power-saving mode.

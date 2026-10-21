@@ -45,6 +45,11 @@ src/
   gameconfig/GameConfigFiles.*  Writes them into the game's files (copy of each original as *.wm-original), restores
   stats/StatsModel.*            Pure logic: GPU counter instance names, GPU / CPU / frame-rate maths, the slow-game
                                 warnings, the log line; Sampler turns two raw samples in a row into GameStats
+  stats/PictureInfo.*           Pure logic: which scaler shows the game's picture (Magpie, downscaled view, none), from
+                                what size to what size, scale and direction, what is in the way; the overlay's rows
+  stats/SessionReport.*         Pure logic: report samples (CSV), setups ("Magpie FSR 1600 × 900 → 1920 × 1080"),
+                                per-setup summaries, session / comparison JSON, sessions.csv, setups merged over
+                                sessions, the sharpness score (RMS Sobel gradient)
   stats/StatsBackend.h          Interface to the game's resource use, the GPU setting, power plans / mode, and statsBackend()
   stats/DriverModel.*           Pure logic: installed driver per card, NVIDIA's version number, NVIDIA lookup ids / answer
   stats/DriverCheck.*           Asks NVIDIA's driver lookup for the newest driver (Qt Network)
@@ -56,8 +61,17 @@ src/
   helix/HelixPaths.*            Pure logic: on-disk layout, built-package marker, post-build leftovers
   helix/HelixIni.*              Pure logic: read / edit helixsr.ini (Sharpener, Sharpness, WaveSize), keeping the rest of the file
   helix/HelixSystem.*           Pure logic: GPU family from the name / SIMD width, can this PC run HelixSR (Verdict)
-  helix/SystemProbe.*           DXGI + Direct3D 12 probe of the adapters, free disk space, tar / PowerShell
-  helix/HelixSetup.*            Download, verify, unpack, build (HelixSR's own setup), clean up; per-game install
+  helix/HelixBridge.*           Pure logic: HelixSR 2.x entry points: the .ps1's tool downloads, build / status /
+                                bridge arguments, the bridge's JSON replies
+  helix/SystemProbe.*           DXGI + Direct3D 12 probe of the adapters, free disk space, tar.exe
+  magpie/MagpieConfig.*         Pure logic: Magpie's config.json: scaling modes, add / update / remove the app's
+                                per-game profiles ("WindowManager: <game>"; 3D game mode off by default)
+  magpie/MagpieRelease.*        Pure logic: newest Magpie release (x64 zip with a SHA-256 digest), <app>/magpie,
+                                installed-version marker, what an update keeps (config, cache, logs)
+  magpie/MagpieProcess.*        Running Magpie.exe processes (whose), WM_MAGPIE_QUIT, start in the tray, the game
+                                window's facts, what Magpie scales now (its scaling window's properties) (Windows)
+  magpie/MagpieSetup.*          The app's portable Magpie: download, verify, unpack, replace, first start
+  helix/HelixSetup.*            Download, verify, unpack, tools, build (HelixSR's build script), clean up; per-game install
   ui/Theme.*                    Dark palette + stylesheet; button roles and "active" state
   ui/GameBar.*                  Game dropdown + Add / Start / Restart / Kill
   ui/WindowTable.*              Table of the target's windows (+ empty-state message)
@@ -70,13 +84,22 @@ src/
   ui/HelpDialog.*               Help > Help topics: topic list + search over docs/help/*.md (embedded via the .qrc);
                                 web links and Help > Online wiki open the wiki (wikiUrl)
   ui/LogViewerDialog.*          File > View logs...: app and per-game log viewer
+  ui/MagpiePanel.*              Magpie tab: set up / update the app's copy of Magpie; the selected game's effect
+  ui/MagpieSession.*            Magpie for the game being started: profile from its settled window, start, close
   ui/HelixPanel.*               HelixSR tab: set-up / update with a timer, list of confirmed games, run
   ui/DisplayPanel.*             Display tab: this PC's display settings, and the selected game's own
   ui/GameConfigPanel.*          Game config tab: render scale, resolution and JConfig window for the selected game
-  ui/FocusMonitor.*             Reads the foreground every 250 ms: Focus: game / app / other (FocusSwitch::ownerOf)
-  ui/StatsMonitor.*             Samples the game once a second while the stats bar or the floating bar shows;
-                                logs a summary; statsUpdated() feeds the views
-  ui/StatsBar.*                 Game stats bar (a bottom QToolBar), shows StatsMonitor's samples
+  ui/FocusMonitor.*             Reads the foreground every 250 ms: Focus: game / app / other (FocusSwitch::ownerOf),
+                                and the foreground program's file name
+  ui/StatsMonitor.*             Samples the game once a second whenever it runs (and Magpie.exe's GPU use); logs a
+                                summary; statsUpdated() feeds the views
+  ui/SessionRecorder.*          Records each game session into reports/<game>/ (CSV per second, JSON summary)
+  ui/PictureCompare.*           Compare picture: the game's frame (PrintWindow) and Magpie's picture (screen copy) at
+                                the same moment, a bilinear stretch, sharpness scores, the side-by-side PNG
+  ui/ReportCharts.*             The Reports tab's QPainter charts (session timeline, setups bar table), ImageView
+  ui/ReportsPanel.*             Reports tab: a game's sessions, the Session / Setups / Pictures views, Larger view
+  ui/GameOverlay.*              Game info overlay: see-through panel in a corner of the game's monitor (click-through,
+                                topmost above Magpie, left out of captures by default)
   ui/MiniBar.*                  The floating bar the app minimizes to (frameless, topmost, takes no focus)
   ui/GpuPanel.*                 GPU & Power tab: graphics cards and drivers (+ NVIDIA update check), the card in use,
                                 Windows' per-exe graphics setting, power plan and power mode
@@ -132,7 +155,8 @@ Spin boxes are styled in the same sheet; their arrows are the SVGs in `resources
               every tick:  WindowManager::findPrimaryWindow()  ─▶  Fit::Trigger.update()
                                               │   (same hwnd + same rect for ~1.8 s)
                                               ▼
-                            controller emits fitProposed() ──▶ MainWindow::showFitDialog()
+                            controller emits fitProposed(true) ──▶ MainWindow::showFitDialog()
+                            (skipped for a game Magpie scales: MagpieSession::handles; by hand: fitProposed(false))
                                                                       │
                           FitDialog ◀── measureFit(request) ──────────┤  recomputed on every option change
                                 │
@@ -238,15 +262,67 @@ Spin boxes are styled in the same sheet; their arrows are the SVGs in `resources
 - The panel reads the monitors when the tab is shown, after each change and on **Re-read**, not in
   `refresh()` (DDC/CI reads are slow).
 
-## Game stats bar
+## Game stats and the game info overlay
 
 ```
- StatsMonitor (QTimer 1 s, while the stats bar or the floating bar shows)
+ StatsMonitor (QTimer 1 s, always on where statsBackend().supported())
      -- pid --> thread pool: statsBackend().sample(pid) --> RawSample
      pid: controller.activeWindowPid(), else WindowManager::runningPid(target) every 5 s
      <-- queued -- Stats::Sampler::update(pid, raw, adapters) --> GameStats --> game log
-                                                               statsUpdated --> StatsBar, MiniBar, GpuPanel
+                                                               statsUpdated --> GpuPanel, MainWindow::updatePicture
+
+ MainWindow::updatePicture (each sample)
+     Picture::Facts <-- Magpie::windowFacts(active window): drawn area, monitor + Hz, maximized / full screen
+                    <-- Magpie::scaling(): FindWindow(Window_Magpie_967EB565-...), GetProp Magpie.SrcHWND / Src* / Dest*
+                    <-- the game's Magpie setting, the app's Magpie running (MagpieSession::handles: starting)
+                    <-- ScaledView render / shown size, FocusMonitor (game in front: else Magpie is paused)
+                    <-- GameConfig::status(): render scale / resolution in the game's files (on game change, every 10 s)
+     Picture::evaluate --> Result (scaler, from, to, %, problems) --> status bar label, [Picture] log line on change
+     Picture::overlayLines(facts, result, GameStats) --> GameOverlay::display(title, lines, monitor rect)
 ```
+
+## Reports
+
+```
+ MainWindow::updatePicture (each sample) --> SessionRecorder::add(exe, facts, result, stats)
+     first sample of a run: reports/<folderName(game)>/<yyyyMMdd-HHmmss>-samples.csv, header
+     each second with a game window: Report::Sample (setup = Report::setupName(scaler, state, from, to, window))
+                                     appended + flushed
+     game gone / another game / app closing: Report::summarize --> <stamp>.json, a row in reports/sessions.csv,
+                                             sessionSaved --> ReportsPanel::showGame (< 10 samples: CSV deleted)
+
+ ReportsPanel (refresh: tab shown, Refresh, a session or comparison saved)
+     reports/*/*.json --> Report::sessionFromJson / comparisonFromJson
+     Report::compareSetups(sessions) --> setup order (colours) and SetupChart (states left out)
+     a session picked --> its samples CSV --> SessionChart
+
+ PictureCompare::start(game, "Magpie FSR"): Magpie::scaling() must show the game's window
+     focusTarget() (Magpie draws live only while the game is in front), 2 s; captureStarting (MainWindow hides
+     itself, overlay opacity 0), 250 ms; BitBlt of Magpie's Dest rect, PrintWindow(PW_RENDERFULLCONTENT) of the
+     source window cut to Magpie's Src rect; captureDone
+     bilinear = source scaled to Dest size (Qt::SmoothTransformation); Report::sharpness of all three
+     PictureCompareImage::sideBySide: the 320 x 180 region with the most edge detail, 2x nearest-neighbour
+     reports/<game>/compare-<stamp>.png / -game.png / -bilinear.png / -scaled.png / .json
+```
+
+- **Colours**: the data-viz reference palette's dark steps, assigned by the game's setup order (first seen first),
+  never by rank; *starting / paused / not scaling* are grey (`ReportColors::isState`). One value axis per plot: FPS
+  and GPU % are two plots on one time axis. Hover: a crosshair and the second's values (SessionChart), a row's
+  figures (SetupChart).
+- **Sharpness**: the RMS of the Sobel gradient of the luminance, not the mean: a blurred edge keeps the mean gradient
+  (the same change over more pixels) but lowers the RMS. Compared at the same size (bilinear vs Magpie); the game's own
+  frame is scored at its own size, for reference only.
+- **Magpie's GPU**: `StatsMonitor` looks up a running Magpie.exe every 3 s (the app's copy first) and passes its pid to
+  `Sampler::update`, which reads it from the same GPU engine counters (`GameStats::magpieGpu`).
+
+- **Overlay window**: `Qt::Tool | FramelessWindowHint | WindowStaysOnTopHint | WindowDoesNotAcceptFocus |
+  WindowTransparentForInput`, `WA_TranslucentBackground`; rich-text table in a QLabel on a painted rounded panel.
+  Placed with `SetWindowPos` in physical pixels (moved onto the game's monitor first so it takes that monitor's
+  scale, then into the corner from its size there). Each update re-asserts `HWND_TOPMOST`: in full-screen mode Magpie
+  puts its scaling window above all topmost windows when the focus changes. `SetWindowDisplayAffinity`
+  `WDA_EXCLUDEFROMCAPTURE` keeps it out of screen copies (the snapshot's BitBlt, recordings) unless *In screenshots
+  and recordings* is ticked. Global hotkey Ctrl+Alt+I (id 5) toggles it. Magpie's overlap check
+  (`_CheckForegroundFor3DGameMode`) only looks at the foreground window, which the overlay never is.
 
 - **CPU**: `GetProcessTimes` and `GetSystemTimes` deltas between two samples (`Stats::cpuPercent`, 100 % = all cores).
 - **GPU**: the PDH wildcard counters `\GPU Engine(*)\Utilization Percentage` and `\GPU Process Memory(*)\Dedicated
@@ -277,7 +353,8 @@ Spin boxes are styled in the same sheet; their arrows are the SVGs in `resources
 - **Floating bar**: `MainWindow::changeEvent` sees the minimise and calls `showMiniBar()` (hide this window, show
   the `MiniBar`); `restoreFromMiniBar()` reverses it. `MiniBar` is a top-level `Qt::Tool | FramelessWindowHint |
   WindowStaysOnTopHint | WindowDoesNotAcceptFocus` window with `WA_ShowWithoutActivating`, so it never takes the
-  keyboard from the game; dragging uses `QWindow::startSystemMove`. `StatsMonitor` runs while either bar shows.
+  keyboard from the game; dragging uses `QWindow::startSystemMove`. It shows the game's name only (the stats are on
+  the overlay).
 - **Window list refresh**: `WindowManager::refreshWindows` re-reads the target's windows without logging, keeps the
   active window while it exists (`bestWindow` otherwise) and says whether anything changed; the controller's
   `refreshWindows` slot emits `statusChanged` only then. Called on `GameWatch::windowsChanged`,
@@ -334,7 +411,7 @@ Spin boxes are styled in the same sheet; their arrows are the SVGs in `resources
 - `FocusMonitor` polls `platform().foregroundWindow()` (`GetForegroundWindow`; X11 `_NET_ACTIVE_WINDOW`) every 250 ms.
   `FocusSwitch::ownerOf` compares the foreground pid with this app's, the active game window's
   (`controller.activeWindowPid()`) and whether the foreground process runs the target exe (read once per pid).
-- `MainWindow::updateFocusSwitch` shows the result at the end of the stats bar (the status bar without one) and registers
+- `MainWindow::updateFocusSwitch` shows the result in the status bar and registers
   the hotkey (`RegisterHotKey`, id 3, default `F1` from `windowmanager.ini` `focusHotkey`) **only while a game is found**,
   so F1 is not taken from other programs (nor from this app's help) the rest of the time. `WM_HOTKEY` ->
   `switchFocus()`: the game has it -> `takeForeground()`, else `releaseForeground()` + `controller.focusTarget()`.
@@ -356,13 +433,17 @@ Spin boxes are styled in the same sheet; their arrows are the SVGs in `resources
 
 ```
  HelixPanel -- Set up / Update --> HelixSetup::installOrUpdate()
-   Checking     GET api.github.com/.../releases -> Helix::latestRelease()   (newest non-prerelease 1.x zip, kSupportedMajor)
+   Checking     GET api.github.com/.../releases -> Helix::latestRelease()   (newest non-prerelease zip up to 2.x, kSupportedMajor)
    Downloading  zip -> SHA-256 against the asset digest (or SHA256SUMS.txt); mismatch = deleted
    Extracting   tar.exe -xf  -> helixsr/HelixSR-<version>/
-   Building     powershell helixsr-setup.ps1 -Yes   (Python, dxc, DLSS DLL, network; ~5-6 min)
+   Tools        Helix::setupDownloads(helixsr-setup.ps1) -> Python + numpy, DXC into %LOCALAPPDATA%\HelixSR
+                (each SHA-256 checked; skipped when there)
+   Building     python -I setup/helixsr_setup.py <package> --dxc <dxc> --yes --no-fg   (DLSS DLL, network; ~5-6 min)
+                then --status must say network=1
    Cleaning     Helix::buildLeftovers() + older packages deleted, markBuilt()
  HelixPanel -- Install / Run --> HelixSetup::installIntoGame()
-   python helixsr_driver.py <package> install|remove <game root>
+   2.x: python -I setup/helixsr_bridge.py <package> install --game <game root> --way fsr   (or remove)
+   1.x: python helixsr_driver.py <package> install|remove <game root>
 ```
 
 - `HelixPanel` runs `probeSystem()` + `Helix::evaluate()` at start-up, on **Check this PC** and before every
@@ -372,11 +453,17 @@ Spin boxes are styled in the same sheet; their arrows are the SVGs in `resources
 - The decisions are in the pure `helix/` units (`tst_helix`); `HelixSetup` only runs the steps and
   reports them (`stateChanged`, `buildFinished`, `gameJobFinished`). One job at a time.
 - A package counts as built only when `.windowmanager-built` exists in it, so a failed or cancelled
-  build is never used and is removed. The set-up prompt (the DLSS download) is answered with `-Yes`
+  build is never used and is removed. The set-up prompt (the DLSS download) is answered with `--yes`
   after the user agrees in `HelixPanel`.
-- `resources/helixsr_driver.py` (embedded, written to `helixsr/` before each job) imports HelixSR's
-  `helixsr_install` module and installs the FSR drop-in for one folder, because the stock script
-  works on a numbered list of every game it finds. HelixSR's files are never edited.
+- **HelixSR 2.x: never `helixsr-setup.ps1`.** Its last step runs `helixsr_install.py`, which with `-Yes` installs
+  HelixSR Scaler into every game it finds. The app does the steps before it itself: `Helix::setupDownloads` reads
+  the `.ps1`'s `$Downloads` table (URLs and SHA-256 change per release), `HelixSetup::prepareTools` fetches and
+  unpacks what is missing, `buildNetwork` runs `helixsr_setup.py` (`Helix::setupBuildArgs`, always `--no-fg`),
+  `finishBuild` checks `--status`. Games go through HelixSR's JSON bridge (`Helix::bridgeArgs`, always
+  `--way fsr`: the bridge's own `auto` picks HelixSR Scaler); `Helix::parseBridgeReply` reads its reply
+  (`protocol` must be `kBridgeProtocol`). `Helix::hasBridge(package)` picks the bridge or, for a 1.x package
+  still on disk, `resources/helixsr_driver.py`, which imports HelixSR 1.x's `helixsr_install` module and installs
+  the FSR drop-in for one folder. HelixSR's files are never edited.
 - After an install or removal the result is judged from the files (`Helix::scanGame`), not from the
   exit code. `scanGame` looks for `amd_fidelityfx_upscaler_dx12.dll` / `amd_fidelityfx_dx12.dll`
   (not `*.original.dll`) under the game root (`gameRootFor`: the exe folder, or the game folder when the
@@ -389,10 +476,11 @@ Spin boxes are styled in the same sheet; their arrows are the SVGs in `resources
   shows the list at once ("checking...") and fills each row as its scan returns; a generation counter drops the
   results of an older list. `HelixSetup::runGameJob` marks itself busy first, so nothing can overlap.
 - **Installer self-test.** `HelixSetup::testDriver` builds a throw-away game under `helixsr/selftest`, runs the
-  helper to install and remove, and checks the DLL changed and was restored byte for byte. On success the
-  fingerprint of `helixsr_driver.py` (`Helix::driverFingerprint`) is stored in the package's
-  `.windowmanager-built` marker, so it is not repeated until the helper script or the package changes. The
-  helper exits with code 2 (`driver-incompatible: ...`) when HelixSR's functions no longer match
+  installer to install and remove, and checks the DLL changed and was restored byte for byte. On success the
+  installer's fingerprint (`HelixSetup::installerFingerprint`: the bridge script and protocol, or
+  `helixsr_driver.py`) is stored in the package's `.windowmanager-built` marker, so it is not repeated until the
+  installer or the package changes. A bridge reply with another protocol fails the test. The 1.x helper exits
+  with code 2 (`driver-incompatible: ...`) when HelixSR's functions no longer match
   (ImportError / AttributeError / TypeError / NameError); a failed test sets `driverOk() == false`, which
   `canInstall()` and the panel's buttons respect.
 - `HelixIni::applyIni` edits the existing text line by line (section and key lookup is case-insensitive), so
@@ -423,8 +511,10 @@ unit-tested directly.
 | `tst_x11backend` | Linux only: the real X11 backend against an xterm (list, title, pid, move/resize, frame strip/restore, process info, terminate); skips itself without a display |
 | `tst_appconfig` | save/load round-trip, clearing profiles, corrupt/missing files, legacy keys, the HelixSR flag |
 | `tst_display` | mode lists (sizes, refresh rates, best mode, portrait), scale steps relative to the recommended one, brightness percent, WMI instance matching, a game's display settings (JSON, sanitising, description), choosing the monitor, the plan (only what differs and the display supports) and the undo record (first value wins, JSON); on Windows a read-only probe of this PC's displays is printed |
-| `tst_stats` | GPU counter instance names, busiest engine and video memory per process, CPU percent, frame rate and 1 % low (late and out-of-order presents, stale), dedicated adapter, the warnings, short GPU names, reading / editing the graphics-setting value, the floating bar's line, driver matching / dates / NVIDIA versions,
+| `tst_stats` | GPU counter instance names, busiest engine and video memory per process, CPU percent, frame rate and 1 % low (late and out-of-order presents, stale), dedicated adapter, the warnings, short GPU names, reading / editing the graphics-setting value, the compact stats line, driver matching / dates / NVIDIA versions,
 NVIDIA lookup ids (notebook vs desktop) and its answer, the log line, the sampler across samples and processes; on Windows a live sample of the test process is printed |
+| `tst_report` | sample CSV round trip (quoted setup, unknown values, header and broken lines skipped), setup names per state, segments per setup (first seen first, unknown values left out, peaks), session JSON / sessions.csv (nothing private), folder names, setups merged over sessions (weighted by time), comparison JSON, sharpness (hard edge beats a soft one, flat is 0) |
+| `tst_picture` | scale percent (letterboxed: the smaller ratio) and direction; Magpie upscaling, shrinking a window bigger than its monitor (the Tekken case), not running / starting / maximized / paused / not scaling; the downscaled view before Magpie; no scaler (full screen, too big, no window); the overlay's rows (game files, render scale, monitor Hz, FPS, load, power, warnings) |
 | `tst_gameconfig` | layout from the exe path (Win64 / Win32, native separators, not Unreal), the `.bat` game's exe, the keys per file (render scale above / below 100, resolution, left settings take the original or are removed), JConfig's fields (read / write / other bytes kept / wrong size), JSON and sanitising; against a fake Tekken folder: write (CRLF kept, copies only of changed files, nothing on a second run), a user's edit surviving, restore (originals back, copies gone), UTF-8 BOM kept, a game without config |
 | `tst_focusswitch` | who has the focus (game, a second game process, app, other, no game), the toggle, labels, the press-twice rule of the terminate key, hotkey parsing (F-keys, letters, digits, named keys, modifiers, invalid) and text round trip |
 | `tst_helix` | version parsing/ordering, release choice (no prereleases, the right zip), checksums, update decision, DLL version, game root, FSR DLL detection and installed / replaced state, async scan delivery, built-package marker and driver fingerprint, post-build leftovers, helixsr.ini parsing and in-place editing, GPU family and the can-this-PC-run-it verdict (a live probe of the test machine is printed too) |
@@ -440,7 +530,7 @@ README.md                       What the app is for, getting started, link to th
 docs/index.md                   Wiki home page (MkDocs site, https://robertotorino.github.io/WindowManager/)
 docs/wiki/*.md                  The user documentation in full
 docs/development/*.md           Building and testing, the docs site
-docs/ARCHITECTURE.md, LINUX_PORT.md, HELIXSR_2.md   Development notes (also in the wiki)
+docs/ARCHITECTURE.md, LINUX_PORT.md, HELIXSR_2.md, MAGPIE.md   Development notes (also in the wiki)
 docs/help/*.md                  In-app help: the highlights only, each page links to its wiki page;
                                 embedded via resources/resources.qrc, excluded from the site
 docs/assets/                    Logo, favicon, extra.css (the blue theme), screenshots/ (placeholders)

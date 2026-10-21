@@ -20,6 +20,15 @@ QString setupDataDir();
 // Python of the HelixSR setup (stdlib is enough for installing into games).
 QString pythonExe(const QString& setupData);
 
+// The shader compiler the HelixSR setup builds with (removed again after the build).
+QString dxcExe(const QString& setupData);
+
+// HelixSR's DLL in a package: in its HelixSR-fsrfg folder (HelixSR 2 on), else in the package root (1.x).
+QString packageDll(const QString& packageDir);
+
+// True for a package installed through HelixSR's JSON bridge (HelixSR 2 on), not resources/helixsr_driver.py.
+bool hasBridge(const QString& packageDir);
+
 struct Package
 {
     QString dir;       // <data dir>/HelixSR-<version>
@@ -41,7 +50,8 @@ bool markBuilt(const QString& packageDir, const Version& version, const QString&
 QStringList otherPackages(const QString& data, const QString& keepDir);
 
 // Existing files and folders that are only needed while building: the Scaler download, the
-// ready-to-copy "manual" folder, the shader compiler, numpy and the archives. Python itself stays.
+// ready-to-copy "manual" / "fsr3-drop-in" folders, the shader compiler, numpy and the archives.
+// Python itself stays.
 QStringList buildLeftovers(const QString& packageDir, const QString& setupData);
 
 } // namespace Helix

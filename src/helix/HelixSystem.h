@@ -32,7 +32,6 @@ struct SystemInfo
     QList<GpuInfo> gpus;
     qint64 freeDiskMB{-1};       // where HelixSR is stored; -1 = unknown
     bool   hasTar{true};         // tar.exe unpacks the download
-    bool   hasPowerShell{true};  // runs HelixSR's setup
 };
 
 enum class Level { Supported, Experimental, Unsupported };

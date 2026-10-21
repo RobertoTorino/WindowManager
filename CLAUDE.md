@@ -100,13 +100,53 @@ The desktop is KDE Plasma on Wayland. The X11 backend only sees XWayland windows
 - Window list (2026-10-20): follows the game by itself (`refreshWindows`: watch events + every 3 s, quiet), the
   active row is green / bold / "Active". Checked in the scratch copy with charmap (row moved 100,100 -> 400,300
   without Scan).
+- Magpie (window upscaler, 2026-10-20): analysed and tried in scratch (auto-scale from a written profile works;
+  3DGameMode traps the mouse, keep it off). Steps 1-3 built: `MagpieConfig` (profiles), the Magpie tab
+  with the app's own portable copy (`MagpieSetup`) and the per-game effect, `MagpieSession` (profile from the
+  game's window on Start, Magpie closed at the game's end). All tried in a scratch copy with the stand-in game;
+  **not tried yet with a real game** (Tekken 7 via JConfig is the obvious one); how it can be driven (profiles with autoScale in
+  its portable config.json, WM_MAGPIE_QUIT, MagpieScalingChanged) and a plan: [docs/MAGPIE.md](docs/MAGPIE.md).
+- Game info overlay, Magpie GPU share, Reports tab, Compare picture (2026-10-21, Windows only): built, 17 tests pass,
+  tried in the scratch copy with the stand-in + Magpie (screenshots checked). Magpie with Tekken works (user's run,
+  1600 x 900 -> 1920 x 1080); the overlay and Reports are **not tried with Tekken yet**. The stats bar is gone.
 - Ideas, not started: a toolbar button for the log viewer (there is no settings dialog), more detailed logging inside `WindowManager.cpp`.
 
-## Where we left off (2026-10-20)
+## Where we left off (2026-10-21)
 
-Open work, in this order. Windows: 14 tests, Linux (WSL): 15 tests, all passing; nothing committed by Claude.
+Open work, in this order. Windows: 17 tests, Linux (WSL): not rerun since tst_picture and tst_report, all passing; nothing committed by Claude.
 
-1. **Tekken 7 test by the user, with the new Game config tab and focus switch** (built 2026-10-20). Tekken here is
+1. **Tekken 7 with Magpie, the game info overlay and the Reports tab: next test by the user** (state 2026-10-21 01:45).
+   - **Where Tekken stands:** Magpie works with it. Third run (01:02): the user had written resolution 1600 x 900 on
+     the Game config tab, Magpie scaled `1600 × 900 → 1920 × 1080 (120 %, upscaling)` for 4 min (Magpie's own log
+     `magpie/logs/magpie.log` agrees). But no gain: Tekken is capped at 60 FPS and uses ~30 % GPU at native 1080p,
+     so upscaling saves nothing; the better use of the spare GPU is render scale 125-150 % at 1920 x 1080. Magpie
+     started scaling 50 s late because Tekken was not really the foreground window (probably JConfig's input
+     helper); the overlay now names who is in front.
+   - **Fixed / built this session (all only tried in the scratch copy with the stand-in + Magpie on monitor 2):**
+     the Magpie session follows the splash -> UnrealWindow swap; a warning when the game window is bigger than its
+     monitor (the 3840 x 2160 case, clamped to 1942x2176 over both stacked monitors); the **game info overlay**
+     (replaces the stats bar; Ctrl+Alt+I; corner; left out of captures unless ticked) and the status-bar scaler
+     line; Magpie's own GPU share (`+ Magpie 45 %` with the stand-in at 120 Hz); "X is in front, click the game";
+     the **Reports tab** (sessions recorded per second, Session / Setups / Pictures views, Larger view) and
+     **Compare picture** (+15.5 % for FSR on the stand-in).
+   - **Next test (ask the user):** restart the app from `build/windows-clang-debug`. Tekken: Game config 1600 x 900
+     (or 1280 x 720) + Write now, Magpie FSR, Start, play ~1 min, pause, Reports > **Compare picture**; then
+     Magpie Off + Game config 1920 x 1080 + Write now, play ~1 min. Then look at Reports > **Setups** together.
+     Ask for the game log (`[Picture]`, `[Report]`, `[Stats]`, `[Magpie]` lines) and `reports/TEKKEN7FRR2/`.
+   - **Watch for:** whether PrintWindow reads Tekken's DirectX frame (else Compare says "came back black": would need
+     Windows.Graphics.Capture); real FPS in the charts; the overlay over Magpie's full-screen picture with Tekken;
+     the "in front" name while Magpie waits.
+   - If nothing is scaled: Tekken or JConfig may run elevated (Magpie cannot scale a higher-integrity window).
+     Mouse stuck: Magpie's tray icon > Exit, or F2 twice. Magpie refuses maximized / borderless full screen.
+   - Still open: a Steam-launched game with Magpie, 3D game mode set from the tab, the downscaled view / floating
+     bar / opacity next to Magpie (docs/MAGPIE.md, step 4); report items not built yet (see item 4).
+     `docs/assets/screenshots/stats-bar.png` is unused (the user may delete it). Linux (WSL) build not rerun.
+2. **HelixSR 2.0.0 in the real app, test by the user** (built 2026-10-20, a full 2.0 set-up passed in a scratch
+   copy only). HelixSR tab > **Update to 2.0.0** (about 5 min; it must not touch any game), then Horizon Forbidden
+   West (has 1.9.3): Install (the tab offers to update outdated games), select AMD FSR in the game, check
+   `helixsr.log` next to the DLL and that the game's DLL says 2.0.0, then Remove (the game's own DLL back). Make
+   sure no other game folder changed. Ask for the HelixSR lines of the app log.
+3. **Tekken 7 test by the user, with the new Game config tab and focus switch** (built 2026-10-20). Tekken here is
    the arcade build (TEKKEN 7 Fated Retribution R2, `.../TEKKEN_7_FATED_RETRIBUTION_ROUND_2`) started through
    **JConfig**. Findings: no `Saved/` folder, so the game reads the loose `TekkenGame/Config/Default*.ini` and
    `Engine/Config/**`; `Engine/Config/Windows/WindowsEngine.ini` has `r.setres=1280x720`; JConfig keeps its
@@ -130,7 +170,7 @@ Open work, in this order. Windows: 14 tests, Linux (WSL): 15 tests, all passing;
    resets, F1 while Tekken holds the focus (JConfig's input emulator might swallow keys), and from the earlier
    list: Ctrl+Alt+M with the mouse held, FPS in the stats bar (Performance Log Users), one instance only.
    Suggested settings: Resolution 1920 x 1080, JConfig window *Monitor 2* (0,-1080), Render scale 150 %.
-2. **Game session reports** (decided with the user): a **tab first** (a separate window maybe later); per session
+4. **Game session reports** (decided with the user): a **tab first** (a separate window maybe later); per session
    one **JSON** (`reports/<game>/<date-time>.json`, `schemaVersion`), a row in **`reports/sessions.csv`**, and a
    **per-second samples CSV** (for charts later); "where it was played" is a **label the user chooses** (no PC
    name). Content: game (name, exe name, Steam AppID), start / end / time played, app version, CPU / RAM / GPUs +
@@ -140,12 +180,21 @@ Open work, in this order. Windows: 14 tests, Linux (WSL): 15 tests, all passing;
    with timestamps. **No private data:** no user names or paths with the user folder, no PC name, IP, MAC or
    monitor serials. Phases: (1) recorder + files, pure parts tested; (2) the tab (list, details); (3) compare two
    sessions + a self-drawn FPS chart (no Qt Charts).
-3. **More global hotkeys** only if the user asks: the user chose a focus switch (F1, done). Tekken keeps the focus,
+   **Built 2026-10-21 (the user asked: Magpie GPU share, who is in front, picture comparison, per-game graphs):**
+   `SessionRecorder` (CSV per second, JSON per session, sessions.csv), Reports tab (game dropdown, sessions,
+   Session timeline FPS / GPU coloured by setup, Setups bar table, Pictures), `PictureCompare` (game frame via
+   PrintWindow + Magpie's screen picture, bilinear stretch, RMS-gradient sharpness, side-by-side PNG). Checked in the
+   scratch copy with the stand-in + Magpie on monitor 2: sessions with and without Magpie recorded and shown, a
+   comparison +15.5 % for FSR, Magpie GPU about 45 % at 120 Hz. **Not tried yet:** with Tekken (real FPS in the
+   charts; whether PrintWindow reads Tekken's DirectX frame, else the comparison says it came back black). Still
+   open from the plan: CPU / RAM / driver / Windows version, 0.1 % lows and frame-time percentiles, warnings with
+   durations, app actions, the "where played" label, comparing two picked sessions.
+5. **More global hotkeys** only if the user asks: the user chose a focus switch (F1, done). Tekken keeps the focus,
    so the app's commands can't be reached while it runs (in Nexus it was the reverse: a button gave the focus back
    to the game, which ignores the controller without it).
-4. **Game config for more games**: other UE4 games with loose config; packed / user-folder configs
+6. **Game config for more games**: other UE4 games with loose config; packed / user-folder configs
    (`%LOCALAPPDATA%/<Project>/Saved/Config/WindowsNoEditor/*.ini`) are not handled yet.
-5. **Linux** on the Bazzite machine: docs/LINUX_PORT.md, *Next steps* (stats backend, floating bar under KWin,
+7. **Linux** on the Bazzite machine: docs/LINUX_PORT.md, *Next steps* (stats backend, floating bar under KWin,
    AppImage).
 
 **Testing without touching the user's setup:** copy `WindowManager.exe`, the Qt DLLs and the plugin folders
@@ -179,12 +228,14 @@ it builds with Clang 22 and the 9 tests pass.
 - **found and fixed on Windows:** `tst_steamlibrary` failed on Windows (`/nowhere/...` is stored as
   `C:/nowhere/...`).
 
-## HelixSR 2.0.0 (released 2026-10-19)
+## HelixSR 2.x (set up by the app since 2026-10-20)
 
-The app sets up and updates HelixSR 1.x only (`Helix::kSupportedMajor`). In 2.0.0, `-Yes` also answers
-the setup's game questions, so it would install HelixSR Scaler into every game it finds with frame
-generation on. Its installer API changed too: `install_list` and `uninstall_safe` are gone, and
-`games_from` moved to `helixsr_games.py`, so `resources/helixsr_driver.py` no longer fits. Supporting
-2.x means running HelixSR's `helixsr_setup.py` without the game step, and porting the driver to the new
-installer (the FSR DLL now lives in `HelixSR-fsrfg/`). Shader model 6.6 is still required (`cs_6_6`).
-Problems, evidence and the step-by-step plan (through 2.0's JSON `helixsr_bridge.py`): [docs/HELIXSR_2.md](docs/HELIXSR_2.md).
+HelixSR 2.0's `helixsr-setup.ps1 -Yes` installs HelixSR Scaler into every game it finds, and the author did not
+answer the build-only request (issue #90), so the app never runs the `.ps1`: it reads its `$Downloads` table
+(Python, numpy, DXC + SHA-256), fetches them itself, runs `setup/helixsr_setup.py --yes --no-fg`, and installs /
+removes through 2.0's JSON `setup/helixsr_bridge.py` with `--way fsr` (`src/helix/HelixBridge.*`,
+`kSupportedMajor` = 2). 1.x packages still on disk keep `resources/helixsr_driver.py`. **Checked in a scratch
+copy (2026-10-20):** full set-up of 2.0.0 (4.5 min, `network=1`, clean-up, bridge self-test passed).
+**Not tried yet:** the update from the user's 1.9.3 package in the real app, and a real game (Horizon). HelixSR
+Scaler and frame generation are not offered. Details, and the look at OptiScaler-forceenabled (not taken up):
+[docs/HELIXSR_2.md](docs/HELIXSR_2.md).

@@ -21,6 +21,7 @@ public:
     explicit FocusMonitor(WindowManagerController *controller, QObject *parent = nullptr);
 
     FocusSwitch::Owner owner() const { return m_owner; }
+    QString foregroundName() const { return m_lastName; }   // the foreground program's file name; empty: none
 
 signals:
     void ownerChanged(FocusSwitch::Owner owner);
@@ -34,4 +35,5 @@ private:
     qint64 m_lastPid{0};          // the foreground process last time and the game then ...
     QString m_lastExe;
     bool   m_lastRunsGame{false}; // ... and whether it runs the game's exe (read once per process)
+    QString m_lastName;           // its file name
 };

@@ -6,7 +6,10 @@
 #include "core/Logger.h"
 #include "display/DisplaySession.h"
 #include "gameconfig/GameConfigFiles.h"
+#include "magpie/MagpieProcess.h"
+#include "magpie/MagpieRelease.h"
 #include "platform/PlatformBackend.h"
+#include "stats/PictureInfo.h"
 #include "stats/StatsBackend.h"
 #include "ui/ControlPanels.h"
 #include "ui/DisplayPanel.h"
@@ -18,13 +21,18 @@
 #include "ui/ScaledView.h"
 #include "ui/GameRegistry.h"
 #include "ui/HelixPanel.h"
+#include "ui/MagpiePanel.h"
+#include "ui/MagpieSession.h"
+#include "ui/PictureCompare.h"
+#include "ui/ReportsPanel.h"
+#include "ui/SessionRecorder.h"
 #include "ui/HelpDialog.h"
 #include "ui/InfoDialogs.h"
 #include "ui/LogViewerDialog.h"
 #include "ui/SnapshotCapture.h"
 #include "ui/MiniBar.h"
 #include "window/GameWatch.h"
-#include "ui/StatsBar.h"
+#include "ui/GameOverlay.h"
 #include "ui/StatsMonitor.h"
 #include "ui/Theme.h"
 #include "ui/WindowTable.h"
@@ -72,6 +80,7 @@ constexpr int kStopViewHotkey = 1;
 constexpr int kReleaseMouseHotkey = 2;
 constexpr int kFocusSwitchHotkey = 3;   // these two are registered only while a game is found
 constexpr int kKillHotkey = 4;
+constexpr int kOverlayHotkey = 5;
 
 QSettings uiSettings()
 {
@@ -106,7 +115,15 @@ MainWindow::MainWindow(QWidget *parent)
     // Table and controller
     connect(m_table, &WindowTable::windowChosen, m_controller, &WindowManagerController::setActiveWindow);
     connect(m_controller, &WindowManagerController::statusChanged, this, &MainWindow::refresh);
-    connect(m_controller, &WindowManagerController::fitProposed, this, &MainWindow::showFitDialog);
+    connect(m_controller, &WindowManagerController::fitProposed, this, [this](bool automatic) {
+        // Magpie scales a windowed game; a borderless fit would stop it (see MagpieSession). Asked for by
+        // hand (Fit to monitor), the dialog still opens.
+        if (automatic && m_magpieSession->handles(m_controller->targetExecutable())) {
+            Logger::instance().info("Fit check skipped: Magpie scales this game, which has to stay windowed", "Magpie");
+            return;
+        }
+        showFitDialog();
+    });
     connect(m_snapshots, &SnapshotCapture::message, this, [this](const QString &text) {
         m_detailLabel->setText(text);
     });
@@ -126,6 +143,52 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_helix, &HelixPanel::updateAvailableChanged, this, [this](bool available) {
         m_tabs->setTabText(m_tabs->indexOf(m_helix), available ? "HelixSR (update)" : "HelixSR");
     });
+
+    // Magpie tab, and Magpie for the game being started
+    connect(m_magpie, &MagpiePanel::message, this, [this](const QString &text) {
+        m_detailLabel->setText(text);
+    });
+    connect(m_magpieSession, &MagpieSession::message, this, [this](const QString &text) {
+        m_detailLabel->setText(text);
+    });
+    // Reports tab: sessions are recorded while a game runs; the picture comparison
+    m_recorder = new SessionRecorder(this);
+    m_pictureCompare = new PictureCompare(m_controller, this);
+    connect(m_reports, &ReportsPanel::message, this, [this](const QString &text) { m_detailLabel->setText(text); });
+    connect(m_reports, &ReportsPanel::compareRequested, this, &MainWindow::comparePicture);
+    connect(m_recorder, &SessionRecorder::sessionSaved, m_reports, &ReportsPanel::showGame);
+    connect(m_pictureCompare, &PictureCompare::captureStarting, this, [this]() {
+        // nothing of this app over the game's picture while it is captured
+        m_hiddenForCompare = isVisible();
+        if (m_hiddenForCompare)
+            hide();
+        if (m_overlay)
+            m_overlay->setWindowOpacity(0);
+    });
+    connect(m_pictureCompare, &PictureCompare::captureDone, this, [this]() {
+        if (m_overlay)
+            m_overlay->setWindowOpacity(1);
+        if (m_hiddenForCompare)
+            show();
+        m_hiddenForCompare = false;
+    });
+    connect(m_pictureCompare, &PictureCompare::finished, this, [this](bool ok, const QString &text, const QString &) {
+        m_detailLabel->setText(text);
+        if (!ok)
+            return;
+        const auto game = AppConfig::instance().gameByPath(m_controller->targetExecutable());
+        m_reports->showGame(game && !game->savedName.isEmpty()
+                                ? game->savedName
+                                : QFileInfo(m_controller->targetExecutable()).completeBaseName());
+        m_tabs->setCurrentWidget(m_reports);
+    });
+    connect(m_tabs, &QTabWidget::currentChanged, this, [this](int index) {
+        if (m_tabs->widget(index) == m_reports)
+            m_reports->refresh();
+    });
+    connect(m_magpie, &MagpiePanel::updateAvailableChanged, this, [this](bool available) {
+        m_tabs->setTabText(m_tabs->indexOf(m_magpie), available ? "Magpie (update)" : "Magpie");
+    });
     connect(m_view, &ScaledView::runningChanged, this, [this](bool running) {
         if (running)   // keep this window above the full-screen overlay
             QTimer::singleShot(0, this, [this]() { raise(); });
@@ -136,6 +199,8 @@ MainWindow::MainWindow(QWidget *parent)
                    MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 'D');
     RegisterHotKey(reinterpret_cast<HWND>(winId()), kReleaseMouseHotkey,
                    MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 'M');
+    if (m_overlay)   // the game has the keyboard while the overlay matters
+        RegisterHotKey(reinterpret_cast<HWND>(winId()), kOverlayHotkey, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 'I');
 #endif
 
     // Keep this window off the game's monitor: after every action, when the game moves its window,
@@ -185,8 +250,14 @@ MainWindow::MainWindow(QWidget *parent)
     // set the controller too: the action starts unchecked, so "off" alone would not emit toggled
     m_controller->setFitCheckEnabled(settings.value("fitCheck", true).toBool());
     m_fitCheckAction->setChecked(m_controller->fitCheckEnabled());
-    if (m_statsBar)
-        m_statsBar->setVisible(settings.value("statsBar", true).toBool());
+    if (m_overlay) {
+        const int corner = settings.value("overlayCorner", 0).toInt();
+        for (QAction *a : m_overlayCornerGroup->actions())
+            a->setChecked(a->data().toInt() == corner);
+        m_overlay->setCorner(static_cast<GameOverlay::Corner>(corner));
+        m_overlayAction->setChecked(settings.value("overlay", true).toBool());
+        m_overlayCaptureAction->setChecked(settings.value("overlayCapture", false).toBool());
+    }
     m_miniOnMinimizeAction->setChecked(settings.value("miniBar", true).toBool());
     m_focusHotkey = settings.value("focusHotkey", "F1").toString();
     m_killHotkey = settings.value("killHotkey", "F2").toString();
@@ -196,7 +267,6 @@ MainWindow::MainWindow(QWidget *parent)
         m_mini->move(settings.value("miniBarPos").toPoint());
         m_miniPlaced = true;
     }
-    updateStatsMonitor();
 
     // A game's display settings left behind by a crash
     m_display->recoverFromCrash();
@@ -211,9 +281,11 @@ MainWindow::MainWindow(QWidget *parent)
 MainWindow::~MainWindow()
 {
     delete m_mini;
+    delete m_overlay;
 #ifdef Q_OS_WIN
     UnregisterHotKey(reinterpret_cast<HWND>(winId()), kStopViewHotkey);
     UnregisterHotKey(reinterpret_cast<HWND>(winId()), kReleaseMouseHotkey);
+    UnregisterHotKey(reinterpret_cast<HWND>(winId()), kOverlayHotkey);
     if (m_focusHotkeyRegistered)
         UnregisterHotKey(reinterpret_cast<HWND>(winId()), kFocusSwitchHotkey);
     if (m_killHotkeyRegistered)
@@ -238,6 +310,12 @@ bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr
     }
     if (msg->message == WM_HOTKEY && msg->wParam == kFocusSwitchHotkey) {
         switchFocus();   // a hotkey lets this app take the foreground
+        *result = 0;
+        return true;
+    }
+    if (msg->message == WM_HOTKEY && msg->wParam == kOverlayHotkey) {
+        if (m_overlayAction)
+            m_overlayAction->toggle();
         *result = 0;
         return true;
     }
@@ -289,7 +367,13 @@ void MainWindow::buildUi()
     m_tabs->addTab(capture,  "Capture");
     m_helix = new HelixPanel(m_controller, m_tabs);
     m_tabs->addTab(m_helix,  "HelixSR");
-    m_panels = {state, position, presets, downscale, display, gameConfig, gpu, capture, m_helix};
+    m_magpie = new MagpiePanel(m_controller, m_tabs);
+    m_magpieSession = new MagpieSession(m_controller, this);
+    m_tabs->addTab(m_magpie, "Magpie");
+    // not in m_panels: it reads its files when shown or told, not on every status change
+    m_reports = new ReportsPanel(m_controller, m_tabs);
+    m_tabs->addTab(m_reports, "Reports");
+    m_panels = {state, position, presets, downscale, display, gameConfig, gpu, capture, m_helix, m_magpie};
 
     // QTabWidget sizes itself to its tallest page, which leaves blank space under
     // shorter ones. Cap its height to tab bar + current page instead; the window
@@ -348,47 +432,39 @@ void MainWindow::buildUi()
     statusBar()->setSizeGripEnabled(true);
     m_focusLabel = new QLabel(this);
     statusBar()->addWidget(m_detailLabel, 1);
-    statusBar()->addPermanentWidget(m_targetLabel);
 
     // Who has the keyboard while a game runs; the focus-switch hotkey follows it
     m_focus = new FocusMonitor(m_controller, this);
     connect(m_focus, &FocusMonitor::ownerChanged, this, &MainWindow::updateFocusSwitch);
 
-    // Second bar above the status bar: the running game's FPS, CPU, GPU, memory and power state
-    if (StatsBar::available()) {
+    // The running game's FPS, CPU, GPU, memory and power state, for the game log, the GPU tab and the game
+    // info overlay: sampled whenever a game runs
+    if (statsBackend().supported()) {
         m_monitor = new StatsMonitor(m_controller, this);
-        m_stats = new StatsBar(m_controller, this);
-        m_statsBar = new QToolBar("Game stats", this);
-        m_statsBar->setObjectName("statsBar");
-        m_statsBar->setMovable(false);
-        m_statsBar->setFloatable(false);
-        m_statsBar->addWidget(m_stats);
-        addToolBar(Qt::BottomToolBarArea, m_statsBar);
-        connect(m_monitor, &StatsMonitor::statsUpdated, m_stats, &StatsBar::display);
+        m_monitor->setActive(true);
         connect(m_monitor, &StatsMonitor::statsUpdated, gpu, &GpuPanel::showStats);
-        connect(m_statsBar->toggleViewAction(), &QAction::toggled, this, &MainWindow::updateStatsMonitor);
         if (GameWatch::supported()) {
             m_watch = new GameWatch(this);
             connect(m_monitor, &StatsMonitor::gameChanged, m_watch, &GameWatch::watch);
         }
+
+        // The game info overlay and the status bar's scaler line follow each sample
+        m_overlay = new GameOverlay;
+        m_scalerLabel = new QLabel(this);
+        m_scalerLabel->setObjectName("statValue");   // orange while something is in the way
+        statusBar()->addPermanentWidget(m_scalerLabel);
+        connect(m_monitor, &StatsMonitor::statsUpdated, this, &MainWindow::updatePicture);
+        connect(m_monitor, &StatsMonitor::gameChanged, this, &MainWindow::readGameFiles);
     }
-    // "Focus: game / app" at the end of the stats bar (the upper bar), else in the status bar
-    if (m_statsBar) {
-        m_focusLabel->setContentsMargins(12, 0, 4, 0);
-        m_statsBar->addWidget(m_focusLabel);
-    } else {
-        statusBar()->insertPermanentWidget(0, m_focusLabel);
-    }
+    m_focusLabel->setContentsMargins(8, 0, 4, 0);
+    statusBar()->addPermanentWidget(m_focusLabel);
+    statusBar()->addPermanentWidget(m_targetLabel);
 
     // The floating bar the app minimizes to
     m_mini = new MiniBar;
     connect(m_mini, &MiniBar::restoreRequested, this, &MainWindow::restoreFromMiniBar);
     connect(m_mini, &MiniBar::focusGameRequested, m_controller, &WindowManagerController::focusTarget);
     connect(m_mini, &MiniBar::exitRequested, this, &QWidget::close);
-    if (m_monitor)
-        connect(m_monitor, &StatsMonitor::statsUpdated, m_mini, &MiniBar::display);
-    else
-        m_mini->setStatsShown(false);
 }
 
 QWidget *MainWindow::buildActionRow()
@@ -470,10 +546,27 @@ void MainWindow::buildMenus()
     connect(m_fitCheckAction, &QAction::toggled, m_controller, &WindowManagerController::setFitCheckEnabled);
     view->addAction("Fit window to &monitor...", QKeySequence(Qt::CTRL | Qt::Key_F),
                     m_controller, &WindowManagerController::requestFitCheck);
-    if (m_statsBar) {
-        QAction *stats = m_statsBar->toggleViewAction();
-        stats->setText("Game &stats bar");
-        view->addAction(stats);
+    if (m_overlay) {
+        auto *overlay = view->addMenu("Game &info overlay");
+        m_overlayAction = overlay->addAction("&Show over the game\tCtrl+Alt+I");
+        m_overlayAction->setCheckable(true);
+        connect(m_overlayAction, &QAction::toggled, this, &MainWindow::updatePicture);
+        overlay->addSeparator();
+        m_overlayCornerGroup = new QActionGroup(this);
+        const QStringList corners{"Top left", "Top right", "Bottom left", "Bottom right"};
+        for (int i = 0; i < corners.size(); ++i) {
+            QAction *a = overlay->addAction(corners[i]);
+            a->setCheckable(true);
+            a->setData(i);
+            m_overlayCornerGroup->addAction(a);
+        }
+        connect(m_overlayCornerGroup, &QActionGroup::triggered, this, [this](QAction *a) {
+            m_overlay->setCorner(static_cast<GameOverlay::Corner>(a->data().toInt()));
+        });
+        overlay->addSeparator();
+        m_overlayCaptureAction = overlay->addAction("In screenshots and &recordings");
+        m_overlayCaptureAction->setCheckable(true);
+        connect(m_overlayCaptureAction, &QAction::toggled, m_overlay, &GameOverlay::setCapturable);
     }
     m_avoidGameMonitorAction = view->addAction("&Keep this app off the game's monitor");
     m_avoidGameMonitorAction->setCheckable(true);
@@ -511,7 +604,9 @@ void MainWindow::buildMenus()
 void MainWindow::refresh()
 {
     const QString exe = m_controller->targetExecutable();
-    m_targetLabel->setText(exe.isEmpty() ? QString("No target") : exe);
+    // the file name only: the scaler and focus lines need the room, and the game bar names the game
+    m_targetLabel->setText(exe.isEmpty() ? QString("No target") : QFileInfo(exe).fileName());
+    m_targetLabel->setToolTip(exe);
     if (m_mini) {
         const auto game = exe.isEmpty() ? std::nullopt : AppConfig::instance().gameByPath(exe);
         m_mini->setGame(exe.isEmpty() ? QString()
@@ -675,6 +770,8 @@ void MainWindow::launchWhenFree(const QString &exePath)
         m_display->gameStarting(exePath);
         if (!m_controller->launchTarget())
             m_display->restore("the launch failed");
+        else
+            m_magpieSession->gameStarting(exePath);
     };
     m_controller->setTargetExecutable(exePath);
     if (!m_controller->isTargetRunning()) {
@@ -1106,7 +1203,6 @@ void MainWindow::showMiniBar()
     }
     hide();
     m_mini->show();
-    updateStatsMonitor();
 }
 
 void MainWindow::restoreFromMiniBar()
@@ -1116,18 +1212,131 @@ void MainWindow::restoreFromMiniBar()
     show();
     raise();
     activateWindow();
-    updateStatsMonitor();
 }
 
-void MainWindow::updateStatsMonitor()
+void MainWindow::comparePicture()
 {
-    if (m_monitor)
-        m_monitor->setActive((m_statsBar && !m_statsBar->isHidden()) || m_mini->isVisible());
+    if (m_pictureCompare->busy())
+        return;
+    const auto game = AppConfig::instance().gameByPath(m_controller->targetExecutable());
+    const QString name = game && !game->savedName.isEmpty()
+                             ? game->savedName
+                             : QFileInfo(m_controller->targetExecutable()).completeBaseName();
+    m_detailLabel->setText("Picture comparison: the game gets the focus; the shots are taken in 2 s. Keep it on a "
+                           "still screen.");
+    m_pictureCompare->start(name, game && game->magpie.enabled() ? "Magpie " + game->magpie.mode : QString("Magpie"));
+}
+
+void MainWindow::readGameFiles()
+{
+    const auto game = AppConfig::instance().gameByPath(m_controller->targetExecutable());
+    const GameConfig::Status st =
+        game ? GameConfig::status(GameConfig::exeForConfig(game->applicationPath, game->childExePath))
+             : GameConfig::Status{};
+    m_fileScale = st.supported() ? st.renderScale : 0;
+    m_fileWidth = st.supported() ? st.width : 0;
+    m_fileHeight = st.supported() ? st.height : 0;
+    m_filesChanged = st.changed;
+}
+
+// What shows the game's picture (Magpie, the downscaled view or nothing), from what size to what size,
+// with the game's stats: the status bar's scaler line and the game info overlay. Logged when it changes.
+void MainWindow::updatePicture()
+{
+    if (!m_monitor)
+        return;
+    const Stats::GameStats &stats = m_monitor->last();
+    Picture::Facts f;
+    f.gameRunning = stats.running;
+    QRect monitor;   // the game's monitor, physical pixels
+    if (f.gameRunning) {
+        if (++m_pictureTicks % 10 == 1)   // the Game config tab may have written the files meanwhile
+            readGameFiles();
+        const quintptr hwnd = m_controller->activeWindow();
+        const Magpie::WindowFacts w = Magpie::windowFacts(hwnd);
+        f.windowFound = !w.className.isEmpty();
+        f.window = {w.clientWidth, w.clientHeight};
+        f.monitor = {w.monitorWidth, w.monitorHeight};
+        f.monitorHz = w.monitorHz;
+        f.maximized = w.maximized;
+        f.fullScreen = w.fullScreen;
+        f.monitorIndex = gameMonitorIndex();
+        if (const auto m = MonitorHelper::getMonitorGeometry(f.monitorIndex)) {
+            monitor = QRect(m->x, m->y, m->w, m->h);
+            if (m_view->isRunning())   // the game window is parked off-screen meanwhile
+                f.monitor = {m->w, m->h};
+        }
+        f.gameInFront = m_focus && m_focus->owner() == FocusSwitch::Owner::Game;
+        if (m_focus && !f.gameInFront)
+            f.foreground = m_focus->foregroundName();
+
+        const auto game = AppConfig::instance().gameByPath(m_controller->targetExecutable());
+        if (game && game->magpie.enabled()) {
+            f.magpieMode = game->magpie.mode;
+            const auto magpies = Magpie::runningMagpies();
+            f.magpieRunning = std::any_of(magpies.begin(), magpies.end(), [](const Magpie::RunningMagpie &m) {
+                return Magpie::isFrom(m, Magpie::installDir());
+            });
+            if (!f.magpieRunning)
+                m_magpieSince.invalidate();
+            else if (!m_magpieSince.isValid())
+                m_magpieSince.start();
+            // Magpie needs a moment from its start to its scaling window
+            f.magpieStarting = m_magpieSession->handles(m_controller->targetExecutable())
+                               && (!f.magpieRunning || m_magpieSince.elapsed() < 3000);
+        }
+        if (const Magpie::Scaling s = Magpie::scaling(); s.active && f.windowFound
+            && Magpie::windowFacts(s.source).pid == w.pid) {
+            if (f.magpieMode.isEmpty())
+                f.magpieMode = "(started elsewhere)";
+            f.magpieScaling = true;
+            f.magpieSource = {s.srcWidth, s.srcHeight};
+            f.magpieDest = {s.destWidth, s.destHeight};
+        }
+        f.viewRunning = m_view->isRunning();
+        f.viewRender = {m_view->renderWidth(), m_view->renderHeight()};
+        f.viewShown = {m_view->shownWidth(), m_view->shownHeight()};
+        f.renderScale = m_fileScale;
+        f.fileResolution = {m_fileWidth, m_fileHeight};
+        f.filesChanged = m_filesChanged;
+    } else {
+        m_pictureTicks = 0;
+    }
+
+    const Picture::Result r = Picture::evaluate(f);
+    if (m_recorder)
+        m_recorder->add(m_controller->targetExecutable(), f, r, stats);
+    m_scalerLabel->setText(f.gameRunning ? r.status : QString());
+    QStringList problems(r.problems.begin(), r.problems.end());
+    m_scalerLabel->setToolTip(problems.join("\n\n"));
+    Theme::setWarning(m_scalerLabel, !r.problems.empty());
+
+    if (f.gameRunning) {
+        const QString line = r.problems.empty() ? r.status : r.status + " | " + problems.join(" | ");
+        if (line != m_lastPictureLog) {
+            m_lastPictureLog = line;
+            Logger::instance().info(line.toStdString(), "Picture");
+        }
+    } else {
+        m_lastPictureLog.clear();
+    }
+
+    if (m_overlayAction && m_overlayAction->isChecked() && f.gameRunning) {
+        const auto game = AppConfig::instance().gameByPath(m_controller->targetExecutable());
+        const QString title = game && !game->savedName.isEmpty()
+                                  ? game->savedName
+                                  : QFileInfo(m_controller->targetExecutable()).completeBaseName();
+        m_overlay->display(title, Picture::overlayLines(f, r, stats), monitor);
+    } else {
+        m_overlay->hide();
+    }
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
     m_view->stop(); // give the game its window back
+    if (m_recorder)
+        m_recorder->finish();
     releaseForeground();
     m_display->restore("WindowManager closed");
     QSettings settings = uiSettings();
@@ -1138,8 +1347,12 @@ void MainWindow::closeEvent(QCloseEvent *event)
     settings.setValue("opacityGameOnly", m_opacityGameOnlyAction->isChecked());
     settings.setValue("confirmKill", m_confirmKill);
     settings.setValue("fitCheck", m_controller->fitCheckEnabled());
-    if (m_statsBar)
-        settings.setValue("statsBar", !m_statsBar->isHidden());   // this window may be hidden (floating bar)
+    if (m_overlay) {
+        settings.setValue("overlay", m_overlayAction->isChecked());
+        settings.setValue("overlayCorner", static_cast<int>(m_overlay->corner()));
+        settings.setValue("overlayCapture", m_overlay->capturable());
+        m_overlay->hide();
+    }
     settings.setValue("miniBar", m_miniOnMinimizeAction->isChecked());
     settings.setValue("avoidGameMonitor", m_avoidGameMonitorAction->isChecked());
     settings.setValue("focusHotkey", m_focusHotkey);

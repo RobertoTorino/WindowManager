@@ -1,6 +1,6 @@
 # Focus and hotkeys
 
-A game like Tekken 7 keeps the keyboard. While a game runs, the stats bar shows **Focus: game / app / other**,
+A game like Tekken 7 keeps the keyboard. While a game runs, the status bar shows **Focus: game / app / other**,
 and two keys work from anywhere (Windows only):
 
 | Key | What it does |

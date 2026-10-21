@@ -10,6 +10,7 @@
 | Ctrl+M | Move this app's window to the other monitor |
 | Ctrl+B | Switch to the floating bar |
 | Ctrl+Alt+D | Stop the downscaled view (works even when this app is not focused). Windows only. |
+| Ctrl+Alt+I | Show or hide the game info overlay (works from anywhere, also while the game has the keyboard). Windows only. |
 | Ctrl+Alt+M | Release the mouse from a game that holds it, and bring this app to the front (works from anywhere). Windows only. |
 | F2, twice within 2 s | While a game runs: terminate it, like Shutdown (works from the game too; *View > Terminate hotkey...*). Windows only. |
 | Ctrl+Q | Exit |

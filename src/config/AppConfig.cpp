@@ -86,6 +86,7 @@ bool AppConfig::load()
         game.steamAppId      = static_cast<quint32>(obj["SteamAppId"].toInteger(0));
         game.display         = DisplayModel::gameSettingsFromJson(obj["Display"].toObject());
         game.gameConfig      = GameConfig::settingsFromJson(obj["GameConfig"].toObject());
+        game.magpie          = Magpie::gameSettingsFromJson(obj["Magpie"].toObject());
         m_games.insert(path, game);
     }
 
@@ -131,6 +132,8 @@ bool AppConfig::save()
             obj["Display"]     = DisplayModel::toJson(it.value().display);
         if (it.value().gameConfig.enabled || !it.value().gameConfig.isEmpty())
             obj["GameConfig"]  = GameConfig::toJson(it.value().gameConfig);
+        if (it.value().magpie.enabled())
+            obj["Magpie"]      = Magpie::toJson(it.value().magpie);
         games.append(obj);
     }
 

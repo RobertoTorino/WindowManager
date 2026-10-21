@@ -40,7 +40,7 @@ QString megabytes(qint64 bytes)
     return QString::number(bytes / 1048576.0, 'f', 0);
 }
 
-// Kills the process and everything it started (the setup runs Python under PowerShell).
+// Kills the process and everything it started (HelixSR's setup starts more Python processes).
 void killTree(QProcess* p)
 {
     if (!p || p->state() == QProcess::NotRunning)
@@ -69,9 +69,9 @@ HelixSetup::HelixSetup(QObject* parent)
     , m_net(new QNetworkAccessManager(this))
     , m_package(Helix::builtPackage(Helix::dataDir()))
 {
-    // A package whose installer helper was checked is trusted; a new package, a new helper script
+    // A package whose installer was checked is trusted; a new package, a new helper script
     // (this app was updated) or an older marker is checked once, in the background.
-    m_driverOk = m_package && m_package->driver == Helix::driverFingerprint(driverScript());
+    m_driverOk = m_package && m_package->driver == installerFingerprint();
     if (m_package && !m_driverOk)
         QTimer::singleShot(0, this, &HelixSetup::verifyDriver);
 }
@@ -146,11 +146,10 @@ void HelixSetup::checkForUpdate()
             const auto newest = Helix::latestRelease(json, 0);
             m_newest = newest ? std::optional<Helix::Version>(newest->version) : std::nullopt;
             if (const auto newer = unsupportedNewer())
-                logWarn(QString("HelixSR %1 is out, but this app sets up HelixSR %2.x only (2.x installs into "
-                                "every game during its setup)")
+                logWarn(QString("HelixSR %1 is out, but this app sets up HelixSR up to %2.x only")
                             .arg(newer->toString()).arg(Helix::kSupportedMajor));
             if (!m_latest)
-                error = QString("no HelixSR %1.x release with a setup zip was found").arg(Helix::kSupportedMajor);
+                error = QString("no HelixSR release (up to %1.x) with a setup zip was found").arg(Helix::kSupportedMajor);
         }
         m_lastError = error;
         if (!error.isEmpty()) {
@@ -186,7 +185,6 @@ void HelixSetup::installOrUpdate()
     if (busy())
         return;
     m_cancelled = false;
-    m_networkBuilt = false;
     if (!m_latest) {
         m_installAfterCheck = true;
         checkForUpdate();
@@ -231,26 +229,19 @@ void HelixSetup::fetchExpectedHash()
     });
 }
 
-void HelixSetup::downloadZip()
+void HelixSetup::fetchFile(const QString& url, const QString& dest, const QString& sha256, const QString& title,
+                           qint64 sizeHint, std::function<void()> next)
 {
-    const Helix::Release r = *m_latest;
-    if (!QDir().mkpath(Helix::dataDir())) {
-        fail("Could not create " + Helix::dataDir());
-        return;
-    }
-    m_zipPath = Helix::dataDir() + "/" + r.zipName;
-    m_zip.setFileName(m_zipPath + ".part");
+    m_zip.setFileName(dest + ".part");
     if (!m_zip.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         fail("Could not write " + m_zip.fileName());
         return;
     }
     m_hash.reset();
-
-    const QString title = QString("Downloading HelixSR %1").arg(r.version.toString());
     setPhase(Phase::Downloading, title + "...", 0);
-    logInfo(title + " from " + r.zipUrl);
+    logInfo(title + " from " + url);
 
-    QNetworkReply* reply = m_net->get(makeRequest(QUrl(r.zipUrl)));
+    QNetworkReply* reply = m_net->get(makeRequest(QUrl(url)));
     m_reply = reply;
     connect(reply, &QNetworkReply::readyRead, this, [this, reply]() {
         const QByteArray chunk = reply->readAll();
@@ -258,13 +249,13 @@ void HelixSetup::downloadZip()
         if (m_zip.write(chunk) != chunk.size())
             reply->abort();
     });
-    connect(reply, &QNetworkReply::downloadProgress, this, [this, title](qint64 got, qint64 total) {
-        const qint64 size = total > 0 ? total : m_latest->zipSize;
+    connect(reply, &QNetworkReply::downloadProgress, this, [this, title, sizeHint](qint64 got, qint64 total) {
+        const qint64 size = total > 0 ? total : sizeHint;
         m_percent = size > 0 ? static_cast<int>(got * 100 / size) : -1;
         m_status = QString("%1: %2 of %3 MB").arg(title, megabytes(got), megabytes(size));
         emit stateChanged();
     });
-    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, dest, sha256, next]() {
         reply->deleteLater();
         m_zip.close();
         if (m_cancelled) {
@@ -276,18 +267,51 @@ void HelixSetup::downloadZip()
             return;
         }
         const QString actual = QString::fromLatin1(m_hash.result().toHex());
-        if (actual != m_expectedSha) {
-            fail("The download does not match its published checksum, so it was discarded.");
+        if (actual != sha256) {
+            fail(QString("The download of %1 does not match its published checksum, so it was discarded.")
+                     .arg(QFileInfo(dest).fileName()));
             return;
         }
         logInfo("Download verified (SHA-256 " + actual + ")");
-        QFile::remove(m_zipPath);
-        if (!QFile::rename(m_zipPath + ".part", m_zipPath)) {
+        QFile::remove(dest);
+        if (!QFile::rename(dest + ".part", dest)) {
             fail("Could not rename the downloaded file.");
             return;
         }
-        extractZip();
+        next();
     });
+}
+
+void HelixSetup::unpack(const QString& archive, const QString& destDir, std::function<void(bool, const QString&)> done)
+{
+    QDir().mkpath(destDir);
+    // tar.exe ships with Windows 10 and later and reads zip archives (a wheel is one too).
+    const QString tar = qEnvironmentVariable("SystemRoot") + "/System32/tar.exe";
+    m_process = new QProcess(this);
+    m_process->setProcessChannelMode(QProcess::MergedChannels);
+    connect(m_process, &QProcess::finished, this, [this, done](int code, QProcess::ExitStatus status) {
+        const QString output = QString::fromLocal8Bit(m_process->readAll());
+        m_process->deleteLater();
+        m_process = nullptr;
+        if (m_cancelled) {
+            fail("Cancelled.");
+            return;
+        }
+        done(status == QProcess::NormalExit && code == 0, output);
+    });
+    m_process->start(tar, {"-xf", archive, "-C", destDir});
+}
+
+void HelixSetup::downloadZip()
+{
+    const Helix::Release r = *m_latest;
+    if (!QDir().mkpath(Helix::dataDir())) {
+        fail("Could not create " + Helix::dataDir());
+        return;
+    }
+    m_zipPath = Helix::dataDir() + "/" + r.zipName;
+    fetchFile(r.zipUrl, m_zipPath, m_expectedSha, QString("Downloading HelixSR %1").arg(r.version.toString()),
+              r.zipSize, [this]() { extractZip(); });
 }
 
 void HelixSetup::extractZip()
@@ -295,22 +319,8 @@ void HelixSetup::extractZip()
     setPhase(Phase::Extracting, "Unpacking HelixSR...");
     const QString temp = Helix::dataDir() + "/extract";
     QDir(temp).removeRecursively();
-    QDir().mkpath(temp);
-
-    // tar.exe ships with Windows 10 and later and reads zip archives.
-    const QString tar = qEnvironmentVariable("SystemRoot") + "/System32/tar.exe";
-    m_process = new QProcess(this);
-    m_process->setProcessChannelMode(QProcess::MergedChannels);
-    connect(m_process, &QProcess::finished, this, [this, temp](int code, QProcess::ExitStatus) {
-        const QString output = QString::fromLocal8Bit(m_process->readAll());
-        m_process->deleteLater();
-        m_process = nullptr;
-        if (m_cancelled) {
-            QDir(temp).removeRecursively();
-            fail("Cancelled.");
-            return;
-        }
-        if (code != 0) {
+    unpack(m_zipPath, temp, [this, temp](bool ok, const QString& output) {
+        if (!ok) {
             QDir(temp).removeRecursively();
             fail("Unpacking failed: " + lastLine(output));
             return;
@@ -332,9 +342,95 @@ void HelixSetup::extractZip()
         }
         QDir(temp).removeRecursively();
         QFile::remove(m_zipPath);   // no longer needed
-        buildNetwork();
+
+        if (!QFile::exists(m_buildDir + "/" + Helix::kSetupScript) || !Helix::hasBridge(m_buildDir)) {
+            fail("This HelixSR release has no setup/helixsr_setup.py and setup/helixsr_bridge.py, so WindowManager "
+                 "cannot set it up. Update WindowManager.");
+            return;
+        }
+        QFile ps1(m_buildDir + "/" + Helix::kSetupPs1);
+        m_tools = ps1.open(QIODevice::ReadOnly) ? Helix::setupDownloads(QString::fromUtf8(ps1.readAll()))
+                                                : QMap<QString, Helix::ToolDownload>{};
+        for (const QString& tool : Helix::kSetupTools) {
+            if (!m_tools.contains(tool)) {
+                fail(QString("This HelixSR release's %1 does not say where to get %2, so WindowManager cannot set "
+                             "it up. Update WindowManager.").arg(Helix::kSetupPs1, tool));
+                return;
+            }
+        }
+        prepareTools();
     });
-    m_process->start(tar, {"-xf", m_zipPath, "-C", temp});
+}
+
+// Gets what helixsr-setup.ps1 would get before building, one step per call: Python with numpy, then DXC,
+// into %LOCALAPPDATA%\HelixSR. Each download is checked against the release's SHA-256.
+void HelixSetup::prepareTools()
+{
+    const QString data = Helix::setupDataDir();
+    if (!QDir().mkpath(data)) {
+        fail("Could not create " + data);
+        return;
+    }
+    const QString python = data + "/python";
+
+    if (!QFileInfo::exists(python + "/numpy")) {
+        const QString zip = data + "/python.zip";
+        fetchFile(m_tools["python"].url, zip, m_tools["python"].sha256, "Downloading Python for the HelixSR setup", 0,
+                  [this, data, python, zip]() {
+            setPhase(Phase::Extracting, "Unpacking Python...");
+            unpack(zip, python, [this, data, python, zip](bool ok, const QString& output) {
+                QFile::remove(zip);
+                if (!ok || !QFile::exists(Helix::pythonExe(data))) {
+                    fail("Unpacking Python failed: " + lastLine(output));
+                    return;
+                }
+                const QString wheel = data + "/numpy.zip";
+                fetchFile(m_tools["numpy"].url, wheel, m_tools["numpy"].sha256, "Downloading numpy", 0,
+                          [this, python, wheel]() {
+                    setPhase(Phase::Extracting, "Unpacking numpy...");
+                    unpack(wheel, python, [this, python, wheel](bool ok, const QString& output) {
+                        QFile::remove(wheel);
+                        if (!ok || !QFileInfo::exists(python + "/numpy")) {
+                            fail("Unpacking numpy failed: " + lastLine(output));
+                            return;
+                        }
+                        prepareTools();
+                    });
+                });
+            });
+        });
+        return;
+    }
+
+    if (!QFile::exists(Helix::dxcExe(data))) {
+        const QString zip = data + "/dxc.zip";
+        fetchFile(m_tools["dxc"].url, zip, m_tools["dxc"].sha256, "Downloading the DirectX shader compiler", 0,
+                  [this, data, zip]() {
+            setPhase(Phase::Extracting, "Unpacking the DirectX shader compiler...");
+            const QString temp = data + "/dxc-unpack";
+            QDir(temp).removeRecursively();
+            unpack(zip, temp, [this, data, zip, temp](bool ok, const QString& output) {
+                QFile::remove(zip);
+                // the compiler and its DLLs are in bin/x64
+                const QDir bin(temp + "/bin/x64");
+                bool copied = ok && bin.exists() && QDir().mkpath(data + "/dxc");
+                for (const QFileInfo& f : bin.entryInfoList(QDir::Files)) {
+                    const QString to = data + "/dxc/" + f.fileName();
+                    QFile::remove(to);
+                    copied = QFile::copy(f.absoluteFilePath(), to) && copied;
+                }
+                QDir(temp).removeRecursively();
+                if (!copied || !QFile::exists(Helix::dxcExe(data))) {
+                    fail("Unpacking the DirectX shader compiler failed: " + lastLine(output));
+                    return;
+                }
+                prepareTools();
+            });
+        });
+        return;
+    }
+
+    buildNetwork();
 }
 
 void HelixSetup::buildNetwork()
@@ -358,22 +454,19 @@ void HelixSetup::buildNetwork()
             fail("Cancelled.");
             return;
         }
-        const bool built = status == QProcess::NormalExit && (code == 0 || m_networkBuilt);
-        if (!built) {
+        // 3: the network is built, frame generation is not (it is not asked for)
+        if (status != QProcess::NormalExit || (code != 0 && code != 3)) {
             fail(QString("The HelixSR setup failed (exit code %1). See the log for its output.").arg(code));
             return;
         }
-        if (code != 0)
-            logWarn(QString("The setup exited with code %1 after building the network; carrying on.").arg(code));
         finishBuild();
     });
 
-    // -Yes answers the one question the setup asks (the download of NVIDIA's DLSS DLL); the
-    // user agreed to it in this app. The setup's game question at the end gets no input and
-    // is skipped; games are installed from here instead. This holds for HelixSR 1.x only: in 2.x
-    // -Yes also answers the game questions, which is why latestRelease() keeps to kSupportedMajor.
-    m_process->start("powershell.exe", {"-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-                                        m_buildDir + "/helixsr-setup.ps1", "-Yes"});
+    // HelixSR's own build script, without helixsr-setup.ps1 around it (that one goes on to install into
+    // every game it finds). --yes answers its one question, the download of NVIDIA's DLSS DLL: the user
+    // agreed to it in this app.
+    m_process->start(Helix::pythonExe(Helix::setupDataDir()),
+                     Helix::setupBuildArgs(m_buildDir, Helix::dxcExe(Helix::setupDataDir())));
     m_process->closeWriteChannel();
 }
 
@@ -394,8 +487,6 @@ void HelixSetup::handleBuildOutput(const QByteArray& data)
         m_lineBuffer.remove(0, end + 1);
         if (line.isEmpty())
             continue;
-        if (line.contains("now carries the network"))
-            m_networkBuilt = true;
         const auto m = bar.match(line);
         if (m.hasMatch())
             m_percent = m.captured(1).toInt();
@@ -408,12 +499,27 @@ void HelixSetup::finishBuild()
 {
     const std::optional<Helix::Version> built =
         m_latest ? std::optional<Helix::Version>(m_latest->version) : std::nullopt;
-    const QString dll = m_buildDir + "/" + Helix::kFsrGenericDll;
-    if (!built || !QFile::exists(dll) || !Helix::markBuilt(m_buildDir, *built)) {
+    if (!built || !QFile::exists(Helix::packageDll(m_buildDir))) {
         fail("The setup finished, but HelixSR's DLL is missing.");
         return;
     }
-    cleanUp();
+    setPhase(Phase::Building, "Checking the build...");
+    runPython(Helix::setupStatusArgs(m_buildDir), [this, built](int, const QString& output) {
+        if (m_cancelled) {
+            fail("Cancelled.");
+            return;
+        }
+        const auto st = Helix::parseBuildStatus(output);
+        if (!st || !st->network) {
+            fail("The setup finished, but the network was not built. See the log for its output.");
+            return;
+        }
+        if (!Helix::markBuilt(m_buildDir, *built)) {
+            fail("Could not write to " + m_buildDir);
+            return;
+        }
+        cleanUp();
+    });
 }
 
 void HelixSetup::cleanUp()
@@ -495,34 +601,44 @@ QByteArray HelixSetup::driverScript()
     return resource.open(QIODevice::ReadOnly) ? resource.readAll() : QByteArray();
 }
 
+QString HelixSetup::installerFingerprint() const
+{
+    if (!m_package)
+        return {};
+    if (!Helix::hasBridge(m_package->dir))
+        return Helix::driverFingerprint(driverScript());
+    // HelixSR's own bridge, and the protocol this app speaks to it
+    QFile bridge(m_package->dir + "/" + Helix::kBridgeScript);
+    const QByteArray script = bridge.open(QIODevice::ReadOnly) ? bridge.readAll() : QByteArray();
+    return Helix::driverFingerprint(QString("bridge %1\n").arg(Helix::kBridgeProtocol).toUtf8() + script);
+}
+
 QString HelixSetup::describeFailure(int exitCode, const QString& output)
 {
     const QString line = lastLine(output);
+    const QString incompatible = "This HelixSR version's installer is not what WindowManager expects (%1). "
+                                 "Update WindowManager, or install by hand with helixsr-setup in the HelixSR folder.";
+    if (line.startsWith('{')) {   // HelixSR's bridge
+        const Helix::BridgeReply reply = Helix::parseBridgeReply(output);
+        if (!reply.compatible)
+            return incompatible.arg("its answer is not bridge protocol " + QString::number(Helix::kBridgeProtocol));
+        if (!reply.error.isEmpty())
+            return reply.error;
+    }
     if (exitCode == kIncompatibleExit) {
         QString detail = line;
         detail.remove("driver-incompatible: ");
-        return "This HelixSR version's installer is not what WindowManager expects (" + detail + "). "
-               "Update WindowManager, or install by hand with helixsr-setup in the HelixSR folder.";
+        return incompatible.arg(detail);
     }
     return line.isEmpty() ? QString("The HelixSR installer failed (exit code %1).").arg(exitCode) : line;
 }
 
-void HelixSetup::runDriver(const QStringList& args, std::function<void(int, const QString&)> done)
+void HelixSetup::runPython(const QStringList& args, std::function<void(int, const QString&)> done)
 {
-    // The helper is written fresh next to the data so it always matches this app.
-    const QByteArray script = driverScript();
-    const QString driver = Helix::dataDir() + "/helixsr_driver.py";
-    QDir().mkpath(Helix::dataDir());
-    QFile out(driver);
-    if (script.isEmpty() || !out.open(QIODevice::WriteOnly | QIODevice::Truncate) || out.write(script) != script.size()) {
-        done(-1, "Could not write the HelixSR helper script.");
-        return;
-    }
-    out.close();
-
     auto output = std::make_shared<QString>();
     auto* p = new QProcess(this);
     p->setProcessChannelMode(QProcess::MergedChannels);
+    QDir().mkpath(Helix::dataDir());
     p->setWorkingDirectory(Helix::dataDir());
     auto env = QProcessEnvironment::systemEnvironment();
     env.insert("PYTHONUTF8", "1");
@@ -544,8 +660,28 @@ void HelixSetup::runDriver(const QStringList& args, std::function<void(int, cons
         p->deleteLater();
         done(status == QProcess::NormalExit ? code : -1, *output);
     });
-    p->start(Helix::pythonExe(Helix::setupDataDir()), QStringList{driver, m_package->dir} + args);
+    p->start(Helix::pythonExe(Helix::setupDataDir()), args);
     p->closeWriteChannel();
+}
+
+void HelixSetup::runInstaller(bool install, const QString& folder, std::function<void(int, const QString&)> done)
+{
+    if (Helix::hasBridge(m_package->dir)) {
+        runPython(Helix::bridgeArgs(m_package->dir, install, folder), done);
+        return;
+    }
+
+    // HelixSR 1.x: the helper is written fresh next to the data so it always matches this app.
+    const QByteArray script = driverScript();
+    const QString driver = Helix::dataDir() + "/helixsr_driver.py";
+    QDir().mkpath(Helix::dataDir());
+    QFile out(driver);
+    if (script.isEmpty() || !out.open(QIODevice::WriteOnly | QIODevice::Truncate) || out.write(script) != script.size()) {
+        done(-1, "Could not write the HelixSR helper script.");
+        return;
+    }
+    out.close();
+    runPython({driver, m_package->dir, install ? "install" : "remove", folder}, done);
 }
 
 void HelixSetup::runGameJob(const QString& exePath, bool install)
@@ -581,8 +717,7 @@ void HelixSetup::runGameJob(const QString& exePath, bool install)
         }
         logInfo(QString("%1 %2 (%3)").arg(verb, exePath, scan.root));
 
-        runDriver({install ? "install" : "remove", scan.root},
-                  [this, exePath, install, finish](int code, const QString& output) {
+        runInstaller(install, scan.root, [this, exePath, install, finish](int code, const QString& output) {
             // The files decide, not the exit code.
             Helix::scanGameAsync(this, exePath, [install, code, output, finish](const Helix::GameScan& after) {
                 const bool installed = after.status == Helix::GameScan::Status::Installed;
@@ -647,7 +782,7 @@ void HelixSetup::testDriver(std::function<void(bool, const QString&)> done)
         m_driverOk = ok;
         m_driverProblem = ok ? QString() : text;
         if (ok && m_package) {
-            m_package->driver = Helix::driverFingerprint(driverScript());
+            m_package->driver = installerFingerprint();
             Helix::markBuilt(m_package->dir, m_package->version, m_package->driver);
         }
         logInfo(ok ? "Installer self-test passed" : "Installer self-test FAILED: " + text);
@@ -656,15 +791,16 @@ void HelixSetup::testDriver(std::function<void(bool, const QString&)> done)
     };
 
     const QString exe = bin + "/Game.exe";
-    runDriver({"install", bin}, [this, exe, bin, ownDll, finish](int code, const QString& output) {
+    runInstaller(true, bin, [this, exe, bin, ownDll, finish](int code, const QString& output) {
         Helix::scanGameAsync(this, exe, [this, bin, ownDll, finish, code, output](const Helix::GameScan& installed) {
             if (installed.status != Helix::GameScan::Status::Installed) {
                 finish(false, describeFailure(code, output));
                 return;
             }
-            runDriver({"remove", bin}, [bin, ownDll, finish](int code2, const QString& output2) {
+            runInstaller(false, bin, [bin, ownDll, finish](int code2, const QString& output2) {
                 QFile restored(bin + "/" + Helix::kFsrGenericDll);
                 const bool back = restored.open(QIODevice::ReadOnly) && restored.readAll() == ownDll;
+                restored.close();   // finish() deletes the folder, which an open file blocks on Windows
                 if (!back) {
                     finish(false, describeFailure(code2, output2) + " (removing did not restore the game's DLL)");
                     return;

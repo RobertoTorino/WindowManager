@@ -22,6 +22,9 @@ struct Status
     bool    jconfig{false};        // monitor_misc.bin of the expected size
     bool    changed{false};        // a copy of an original exists: this app has changed the files
     QString summary;               // what the files hold now, e.g. "render scale 100 % (not set), ..."
+    int     renderScale{0};        // r.ScreenPercentage in the files now; 0: not set
+    int     width{0};              // the resolution the game opens at: user settings, else r.setres; 0: not set
+    int     height{0};
 
     bool supported() const { return engineIni; }
 };

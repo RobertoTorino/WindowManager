@@ -459,7 +459,7 @@ void WindowManagerController::onFitTick()
         }
         Logger::instance().info("Fit check: game window settled, proposing fit", "WindowManagerController");
         setStatus("Game window ready: review the proposed fit.");
-        emit fitProposed();
+        emit fitProposed(true);
         break;
     case Fit::Trigger::Result::TimedOut:
         m_fitTimer->stop();
@@ -480,7 +480,7 @@ void WindowManagerController::requestFitCheck()
         setStatus("Fit check: no game window found. Start the game and press Scan.");
         return;
     }
-    emit fitProposed();
+    emit fitProposed(false);
 }
 
 bool WindowManagerController::measureFit(const WindowManager::FitRequest& request,

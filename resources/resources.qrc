@@ -15,6 +15,8 @@
     <file alias="help/focus.md">../docs/help/focus.md</file>
     <file alias="help/game-stats.md">../docs/help/game-stats.md</file>
     <file alias="help/helixsr.md">../docs/help/helixsr.md</file>
+    <file alias="help/magpie.md">../docs/help/magpie.md</file>
+    <file alias="help/reports.md">../docs/help/reports.md</file>
     <file alias="help/linux.md">../docs/help/linux.md</file>
     <file alias="help/logs-and-troubleshooting.md">../docs/help/logs-and-troubleshooting.md</file>
     <file alias="help/shortcuts.md">../docs/help/shortcuts.md</file>

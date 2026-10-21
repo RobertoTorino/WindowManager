@@ -107,7 +107,7 @@ public slots:
 
 signals:
     void statusChanged();
-    void fitProposed();   // a game window is ready; show the fit dialog
+    void fitProposed(bool automatic);   // a game window is ready (automatic: the check after Start); show the fit dialog
 
 private slots:
     void onBatchPollTick();

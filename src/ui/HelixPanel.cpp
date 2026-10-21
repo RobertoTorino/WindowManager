@@ -619,9 +619,10 @@ void HelixPanel::setUpOrUpdate()
     box.setInformativeText(warning +
         QString("- HelixSR (%1) is downloaded from github.com/lonewolf0622/HelixSR and checked against its "
                 "published SHA-256.\n"
-                "- HelixSR's own setup then downloads Python, a shader compiler and NVIDIA's DLSS 310.7.0 DLL "
-                "(NVIDIA's licence: github.com/NVIDIA/DLSS/blob/v310.7.0/LICENSE.txt) and builds the network on "
-                "this PC. This takes about 5 to 6 minutes.\n"
+                "- Then Python, numpy and a shader compiler (from the addresses HelixSR's setup names, checked the "
+                "same way) and NVIDIA's DLSS 310.7.0 DLL (NVIDIA's licence: "
+                "github.com/NVIDIA/DLSS/blob/v310.7.0/LICENSE.txt) are downloaded, and HelixSR's setup builds the "
+                "network on this PC. This takes about 5 to 6 minutes. No game is changed.\n"
                 "- The built DLL contains NVIDIA's network. Keep it on this PC and do not share it.\n"
                 "- The downloads, the DLSS DLL and the build tools are deleted afterwards.").arg(size));
     auto* go = box.addButton("Download and build", QMessageBox::AcceptRole);

@@ -14,7 +14,7 @@ class QWidget;
  *
  *   role   = "accent" | "danger"   (button emphasis)
  *   active = true                  (toggle button currently "on")
- *   warning = true                 (a stats bar value that explains a slow game)
+ *   warning = true                 (a value that explains a slow game or a wrong picture)
  */
 namespace Theme {
 

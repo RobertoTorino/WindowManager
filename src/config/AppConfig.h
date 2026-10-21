@@ -2,6 +2,7 @@
 
 #include "../display/DisplayModel.h"
 #include "../gameconfig/GameConfigModel.h"
+#include "../magpie/MagpieConfig.h"
 
 #include <optional>
 #include <QHash>
@@ -36,6 +37,7 @@ public:
         quint32 steamAppId{0};           // found in a Steam library: started through Steam; 0 = not
         DisplayModel::GameSettings display;   // display settings while the game runs (Display tab)
         GameConfig::Settings gameConfig;      // written into the game's config files on Start (Game config tab)
+        Magpie::GameSettings magpie;          // Magpie scales the game's window while it runs (Magpie tab)
     };
 
     struct WindowProfile

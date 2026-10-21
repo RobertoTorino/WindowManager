@@ -268,7 +268,8 @@ QString summaryLine(const GameStats& stats)
         parts << "CPU " + percent(*stats.cpu)
                      + (stats.systemCpu ? " (system " + percent(*stats.systemCpu) + ")" : QString());
     if (stats.gpu)
-        parts << "GPU " + percent(*stats.gpu) + (stats.gpuName.isEmpty() ? QString() : " on " + stats.gpuName);
+        parts << "GPU " + percent(*stats.gpu) + (stats.gpuName.isEmpty() ? QString() : " on " + stats.gpuName)
+                     + (stats.magpieGpu ? " + Magpie " + percent(*stats.magpieGpu) : QString());
     if (stats.ram)
         parts << "RAM " + formatBytes(*stats.ram);
     if (stats.vram)
@@ -295,7 +296,7 @@ void Sampler::reset()
     m_presents.clear();
 }
 
-GameStats Sampler::update(qint64 pid, const RawSample& raw, const std::vector<Adapter>& adapters)
+GameStats Sampler::update(qint64 pid, const RawSample& raw, const std::vector<Adapter>& adapters, qint64 magpiePid)
 {
     if (pid != m_pid) {
         reset();
@@ -321,6 +322,8 @@ GameStats Sampler::update(qint64 pid, const RawSample& raw, const std::vector<Ad
         stats.gpu = use.percent;
         if (const Adapter* a = adapterByLuid(adapters, use.luid))
             stats.gpuName = a->name;
+        if (magpiePid)
+            stats.magpieGpu = gpuUseFor(magpiePid, raw.gpuEngines).percent;
     }
 
     if (m_previous && raw.timeNs > m_previous->timeNs) {

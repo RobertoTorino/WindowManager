@@ -71,6 +71,10 @@ set(WINDOW_MANAGER_SOURCES
     # Game stats bar: pure model (unit-tested) and the reading per platform
     src/stats/StatsModel.h
     src/stats/StatsModel.cpp
+    src/stats/PictureInfo.h
+    src/stats/PictureInfo.cpp
+    src/stats/SessionReport.h
+    src/stats/SessionReport.cpp
     src/stats/StatsBackend.h
     src/stats/DriverModel.h
     src/stats/DriverModel.cpp
@@ -124,14 +128,26 @@ set(WINDOW_MANAGER_SOURCES
     src/ui/LogViewerDialog.cpp
     src/ui/HelixPanel.h
     src/ui/HelixPanel.cpp
+    src/ui/MagpiePanel.h
+    src/ui/MagpiePanel.cpp
+    src/ui/MagpieSession.h
+    src/ui/MagpieSession.cpp
     src/ui/DisplayPanel.h
     src/ui/DisplayPanel.cpp
     src/ui/GameConfigPanel.h
     src/ui/GameConfigPanel.cpp
     src/ui/FocusMonitor.h
     src/ui/FocusMonitor.cpp
-    src/ui/StatsBar.h
-    src/ui/StatsBar.cpp
+    src/ui/GameOverlay.h
+    src/ui/GameOverlay.cpp
+    src/ui/PictureCompare.h
+    src/ui/PictureCompare.cpp
+    src/ui/ReportCharts.h
+    src/ui/ReportCharts.cpp
+    src/ui/ReportsPanel.h
+    src/ui/ReportsPanel.cpp
+    src/ui/SessionRecorder.h
+    src/ui/SessionRecorder.cpp
     src/ui/StatsMonitor.h
     src/ui/StatsMonitor.cpp
     src/ui/MiniBar.h
@@ -149,8 +165,20 @@ set(WINDOW_MANAGER_SOURCES
     src/helix/HelixIni.cpp
     src/helix/HelixSystem.h
     src/helix/HelixSystem.cpp
+    src/helix/HelixBridge.h
+    src/helix/HelixBridge.cpp
     src/helix/SystemProbe.h
     src/helix/SystemProbe.cpp
+    # Magpie (window upscaler): its config.json, profiles that scale a game by themselves (pure, unit-tested)
+    src/magpie/MagpieConfig.h
+    src/magpie/MagpieConfig.cpp
+    src/magpie/MagpieRelease.h
+    src/magpie/MagpieRelease.cpp
+    # Magpie: the app's own copy (download, check, unpack, first start) and its process
+    src/magpie/MagpieProcess.h
+    src/magpie/MagpieProcess.cpp
+    src/magpie/MagpieSetup.h
+    src/magpie/MagpieSetup.cpp
     # HelixSR: download, build and per-game install (Qt Network + processes)
     src/helix/HelixSetup.h
     src/helix/HelixSetup.cpp
@@ -254,29 +282,35 @@ if(WINDOWMANAGER_BUILD_TESTS)
     add_wm_test(tst_gameconfig  src/gameconfig/GameConfigModel.cpp src/gameconfig/GameConfigFiles.cpp
                                 src/core/IniText.cpp src/core/Logger.cpp)
     add_wm_test(tst_appconfig   src/config/AppConfig.cpp src/core/Logger.cpp src/display/DisplayModel.cpp
-                                src/gameconfig/GameConfigModel.cpp src/core/IniText.cpp)
+                                src/gameconfig/GameConfigModel.cpp src/core/IniText.cpp
+                                src/magpie/MagpieConfig.cpp)
     # WindowManager and MonitorHelper against a fake PlatformBackend (no real windows)
     add_wm_test(tst_windowmanager
                 src/window/WindowManager.cpp src/window/MonitorHelper.cpp
                 src/window/KillPlanner.cpp src/window/FitCalculator.cpp src/window/SteamMatch.cpp
                 src/platform/PlatformBackend.cpp
                 src/config/AppConfig.cpp src/core/Logger.cpp src/display/DisplayModel.cpp
-                src/gameconfig/GameConfigModel.cpp src/core/IniText.cpp)
+                src/gameconfig/GameConfigModel.cpp src/core/IniText.cpp src/magpie/MagpieConfig.cpp)
     target_link_libraries(tst_windowmanager PRIVATE Qt${QT_VERSION_MAJOR}::Gui)
     # Steam library parsing, a fake Steam folder, and the sync into the saved games
     add_wm_test(tst_steamlibrary
                 src/window/SteamLibrary.cpp src/ui/GameRegistry.cpp
                 src/config/AppConfig.cpp src/core/Utilities.cpp src/core/Logger.cpp
-                src/display/DisplayModel.cpp src/gameconfig/GameConfigModel.cpp src/core/IniText.cpp)
+                src/display/DisplayModel.cpp src/gameconfig/GameConfigModel.cpp src/core/IniText.cpp
+                src/magpie/MagpieConfig.cpp)
     target_link_libraries(tst_steamlibrary PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
     if(UNIX AND NOT APPLE)
         # The real X11 backend against an xterm (skips itself without a display)
         add_wm_test(tst_x11backend src/platform/x11/X11Backend.cpp src/platform/PlatformBackend.cpp)
         target_link_libraries(tst_x11backend PRIVATE Qt${QT_VERSION_MAJOR}::Gui PkgConfig::XCB)
     endif()
+    add_wm_test(tst_picture    src/stats/PictureInfo.cpp src/stats/StatsModel.cpp)
+    add_wm_test(tst_report     src/stats/SessionReport.cpp)
+    add_wm_test(tst_magpie     src/magpie/MagpieConfig.cpp src/magpie/MagpieRelease.cpp src/helix/HelixRelease.cpp)
     add_wm_test(tst_helix      src/helix/HelixRelease.cpp src/helix/HelixGame.cpp
                                 src/helix/HelixPaths.cpp src/helix/HelixSystem.cpp
-                                src/helix/HelixIni.cpp src/helix/SystemProbe.cpp src/core/IniText.cpp)
+                                src/helix/HelixIni.cpp src/helix/SystemProbe.cpp src/core/IniText.cpp
+                                src/helix/HelixBridge.cpp)
     if(WIN32)
         target_link_libraries(tst_helix PRIVATE d3d12 dxgi)   # SystemProbe asks the GPU driver
     endif()

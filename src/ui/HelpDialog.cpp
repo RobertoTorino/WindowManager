@@ -17,7 +17,7 @@ namespace {
 // Reading order of the topics. Titles come from each page's first heading.
 const QStringList kTopics = {
     "getting-started", "games-and-launching", "window-controls", "fit-to-monitor", "downscaled-view",
-    "display-settings", "game-config", "focus", "game-stats", "helixsr", "linux", "logs-and-troubleshooting", "shortcuts",
+    "display-settings", "game-config", "focus", "game-stats", "reports", "helixsr", "magpie", "linux", "logs-and-troubleshooting", "shortcuts",
 };
 
 const QString kWiki = "https://robertotorino.github.io/WindowManager/";

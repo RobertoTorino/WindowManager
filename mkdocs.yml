@@ -88,9 +88,11 @@ nav:
       - Display settings: wiki/display-settings.md
       - Game config: wiki/game-config.md
       - Focus, mouse and hotkeys: wiki/focus-and-hotkeys.md
-      - Game stats and floating bar: wiki/game-stats.md
+      - Game info overlay and floating bar: wiki/game-stats.md
+      - Reports: wiki/reports.md
       - GPU and power: wiki/gpu-and-power.md
       - HelixSR: wiki/helixsr.md
+      - Magpie: wiki/magpie.md
       - Linux (beta): wiki/linux.md
   - Reference:
       - Shortcuts: wiki/shortcuts.md
@@ -103,4 +105,5 @@ nav:
       - Code layout: ARCHITECTURE.md
       - The docs site: development/docs-site.md
       - Linux port notes: LINUX_PORT.md
-      - HelixSR 2.x plan: HELIXSR_2.md
+      - HelixSR 2.x: HELIXSR_2.md
+      - Magpie (analysis): MAGPIE.md

@@ -91,7 +91,6 @@ SystemInfo probeSystem(const QString& storageDir)
 
     const QString system32 = qEnvironmentVariable("SystemRoot") + "/System32";
     info.hasTar = QFile::exists(system32 + "/tar.exe");
-    info.hasPowerShell = QFile::exists(system32 + "/WindowsPowerShell/v1.0/powershell.exe");
 #endif
     // Elsewhere there is no Direct3D 12 to ask: no adapters, so HelixSR is reported as unsupported.
     return info;

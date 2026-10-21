@@ -62,7 +62,8 @@ change.
 | `downscaled-view.png` | Downscaled view |
 | `display-tab.png` | Display settings |
 | `game-config-tab.png` | Game config |
-| `stats-bar.png`, `floating-bar.png` | Game stats and floating bar |
+| `game-overlay.png`, `floating-bar.png` | Game info overlay and floating bar |
+| `reports-session.png`, `reports-setups.png`, `reports-pictures.png` | Reports (taken with the stand-in game) |
 | `gpu-power-tab.png` | GPU and power |
 | `helixsr-tab.png` | HelixSR |
 | `log-viewer.png` | Logs and troubleshooting |

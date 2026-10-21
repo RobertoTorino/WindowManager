@@ -1,5 +1,8 @@
 #include "HelixPaths.h"
 
+#include "HelixBridge.h"
+#include "HelixGame.h"
+
 #include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QDir>
@@ -28,6 +31,22 @@ QString setupDataDir()
 QString pythonExe(const QString& setupData)
 {
     return setupData + "/python/python.exe";
+}
+
+QString dxcExe(const QString& setupData)
+{
+    return setupData + "/dxc/dxc.exe";
+}
+
+QString packageDll(const QString& packageDir)
+{
+    const QString v2 = packageDir + "/HelixSR-fsrfg/" + kFsrGenericDll;
+    return QFileInfo::exists(v2) ? v2 : packageDir + "/" + kFsrGenericDll;
+}
+
+bool hasBridge(const QString& packageDir)
+{
+    return QFileInfo::exists(packageDir + "/" + kBridgeScript);
 }
 
 std::optional<Package> builtPackage(const QString& data)
@@ -87,6 +106,7 @@ QStringList buildLeftovers(const QString& packageDir, const QString& setupData)
     QStringList candidates = {
         packageDir + "/helixsr-scaler",
         packageDir + "/manual",
+        packageDir + "/fsr3-drop-in",
         setupData + "/dxc",
         setupData + "/dxc-unpack",
         setupData + "/dxc.zip",

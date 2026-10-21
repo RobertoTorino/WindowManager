@@ -33,7 +33,7 @@ It runs on Windows, and as a beta on Linux for Steam games under Proton (Bazzite
 | Action row | Scan, Monitor 1 / 2, Stability, Focus, Destroy, Reset All, Shutdown. See [Window controls](window-controls.md). |
 | Window table | The windows of the selected game. |
 | Tabs | Window, Position & Size, Presets, Downscale, Display, Game config, GPU & Power, Capture, HelixSR. |
-| Stats bar | FPS, CPU, GPU, RAM, VRAM and power while a game runs. See [Game stats](game-stats.md). |
+| Game info overlay | Over the game: the scaler (Magpie, downscaled view) and picture sizes, FPS, CPU, GPU, RAM, VRAM, power and warnings. Ctrl+Alt+I. See [Game info overlay](game-stats.md). |
 | Status bar | The result of your last action (left) and the target program (right). |
 
 A tour of every control is on [The main window](the-window.md). Every action is also written to the game's

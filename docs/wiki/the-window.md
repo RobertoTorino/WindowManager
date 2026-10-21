@@ -12,12 +12,11 @@
 | | HWND | Title            | Class | Status | PID | X | Y | W | H          | |   Window table
 | |  ...                                                                   | |   (grows with the window)
 | +------------------------------------------------------------------------+ |
-| [ Window | Position & Size | Presets | Downscale | Display | Game config | GPU & Power | Capture | HelixSR ] | Tabs
+| [ Window | Position & Size | Presets | Downscale | Display | Game config | GPU & Power | Capture | HelixSR | Magpie | Reports ] | Tabs
 | +------------------------------------------------------------------------+ |
 | |  controls for the selected tab                                         | |
 | +------------------------------------------------------------------------+ |
-| FPS 58 · 1% low 41  CPU 23 %  GPU 97 % · GeForce GTX 1650  RAM ...  Plugged in |   Game stats bar
-| status message                                               target exe    |   Status bar
+| status message    Magpie FSR: 1280 × 720 → 1920 × 1080 (150 %)  Focus  exe |   Status bar
 +----------------------------------------------------------------------------+
 ```
 
@@ -70,10 +69,14 @@ one every button and tab acts on, is the green, bold row with Status *Active*. S
 | Menu | Items |
 |---|---|
 | **File** | Add game..., Find Steam games, Open config file, View logs..., Exit |
-| **View** | Always on top, Window opacity, Confirm before terminating a game, Check window fit after launching a game, Fit window to monitor..., Game stats bar, Keep this app off the game's monitor, Release the mouse, Switch focus: game / this app, Focus switch hotkey..., Terminate the game (press twice), Terminate hotkey..., Minimize to floating bar, Switch to floating bar, Stop downscaled view, Move this app to the other monitor |
+| **View** | Always on top, Window opacity, Confirm before terminating a game, Check window fit after launching a game, Fit window to monitor..., Game info overlay (show, corner, in screenshots), Keep this app off the game's monitor, Release the mouse, Switch focus: game / this app, Focus switch hotkey..., Terminate the game (press twice), Terminate hotkey..., Minimize to floating bar, Switch to floating bar, Stop downscaled view, Move this app to the other monitor |
 | **Help** | Help topics (F1), Keyboard shortcuts, Logs and troubleshooting, Online wiki, About |
 
 ## Status bar
 
-The left side shows the result of your last action, the right side the target program. Every result is also
-written to the log; see [Logs and troubleshooting](logs-and-troubleshooting.md).
+The left side shows the result of your last action. On the right, while a game runs: what scales its picture
+(`Magpie FSR: 1280 × 720 → 1920 × 1080 (150 %, upscaling)`, or `No scaler: window 1280 × 720, not scaled
+(1:1)`; orange with the reason in the tooltip when something is in the way, see
+[Game info overlay](game-stats.md)), who has the keyboard (*Focus: game / app*), and the target program's
+file name (the full path in its tooltip). Every result is also written to the log; see
+[Logs and troubleshooting](logs-and-troubleshooting.md).

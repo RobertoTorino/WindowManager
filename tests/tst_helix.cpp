@@ -1,5 +1,6 @@
 #include <QtTest>
 
+#include "helix/HelixBridge.h"
 #include "helix/HelixGame.h"
 #include "helix/HelixIni.h"
 #include "helix/HelixPaths.h"
@@ -125,14 +126,17 @@ private slots:
 
     void latestStaysOnTheSupportedMajor()
     {
-        // HelixSR 2 installs into every game during its setup: the app keeps to 1.x but still sees 2.x.
-        const QByteArray two = json("[{'tag_name':'v2.0.0','prerelease':false,\n"
+        // The app sets up 2.x; a newer major is seen (for the label) but not offered.
+        const QByteArray three = json("[{'tag_name':'v3.0.0','prerelease':false,\n"
+"            'assets':[{'name':'HelixSR-3.0.0.zip','browser_download_url':'https://example.test/3.0.0.zip'}]},\n"
+"           {'tag_name':'v2.0.0','prerelease':false,\n"
 "            'assets':[{'name':'HelixSR-2.0.0.zip','browser_download_url':'https://example.test/2.0.0.zip'}]},\n"
 "           {'tag_name':'v1.9.3','prerelease':false,\n"
 "            'assets':[{'name':'HelixSR-1.9.3.zip','browser_download_url':'https://example.test/1.9.3.zip'}]}]");
-        QCOMPARE(latestRelease(two)->version.toString(), QString("1.9.3"));
-        QCOMPARE(latestRelease(two, 0)->version.toString(), QString("2.0.0"));
-        QVERIFY(!latestRelease(two, 3).has_value());
+        QCOMPARE(kSupportedMajor, 2);
+        QCOMPARE(latestRelease(three)->version.toString(), QString("2.0.0"));
+        QCOMPARE(latestRelease(three, 0)->version.toString(), QString("3.0.0"));
+        QCOMPARE(latestRelease(three, 1)->version.toString(), QString("1.9.3"));
     }
 
     void sumsLookup()
@@ -271,6 +275,8 @@ private slots:
         touch(pkg.filePath("setup/helixsr_install.py"));
         touch(pkg.filePath("helixsr-scaler/OptiScaler.dll"));
         touch(pkg.filePath("manual/x.dll"));
+        touch(pkg.filePath("fsr3-drop-in/amd_fidelityfx_dx12.dll"));
+        touch(pkg.filePath("HelixSR-fsrfg/amd_fidelityfx_dx12.dll"));
         touch(setup.filePath("python/python.exe"));
         touch(setup.filePath("python/numpy/__init__.py"));
         touch(setup.filePath("python/numpy.libs/a.dll"));
@@ -279,12 +285,14 @@ private slots:
 
         const QStringList gone = buildLeftovers(pkg.path(), setup.path());
         const QString joined = gone.join('|');
-        for (const char* name : {"helixsr-scaler", "manual", "/dxc", "python/numpy", "numpy.libs", "numpy-2.5.3.dist-info"})
+        for (const char* name : {"helixsr-scaler", "manual", "fsr3-drop-in", "/dxc", "python/numpy", "numpy.libs",
+                                 "numpy-2.5.3.dist-info"})
             QVERIFY2(joined.contains(name), name);
         // what the game install needs stays
         QVERIFY(!joined.contains("python.exe"));
         QVERIFY(!joined.contains("setup/helixsr_install.py"));
-        QVERIFY(!joined.contains("amd_fidelityfx_dx12.dll"));
+        QVERIFY(!joined.contains("HelixSR-fsrfg"));
+        QVERIFY(!joined.contains(pkg.filePath("amd_fidelityfx_dx12.dll")));
         // nothing listed that does not exist (no dxc.zip, python.zip, ...)
         for (const QString& g : gone)
             QVERIFY2(QFileInfo::exists(g), qPrintable(g));
@@ -382,10 +390,6 @@ private slots:
         QCOMPARE(evaluate(s).level, Level::Unsupported);
 
         s.hasTar = true;
-        s.hasPowerShell = false;
-        QCOMPARE(evaluate(s).level, Level::Unsupported);
-
-        s.hasPowerShell = true;
         QCOMPARE(evaluate(s).level, Level::Supported);
     }
 
@@ -474,6 +478,114 @@ private slots:
         const auto pkg = builtPackage(dir.path());
         QCOMPARE(pkg->driver, fp);
         QCOMPARE(pkg->version.toString(), QString("1.9.3"));
+    }
+
+    // ---- HelixSR 2.x: setup script, bridge ----
+
+    void setupDownloadsAreReadFromTheReleaseScript()
+    {
+        // as in HelixSR 2.0.0's helixsr-setup.ps1
+        const QString ps1 = QString::fromUtf8(
+"$Downloads = @{\n"
+"    python = @{ url = 'https://www.python.org/ftp/python/3.14.8/python-3.14.8-embed-amd64.zip'\n"
+"                sha = 'A93ABE456AB01BD96D7A085B3CDB6566B3063F4241360D114142FBDB07F0A310' }\n"
+"    numpy  = @{ url = 'https://files.pythonhosted.org/packages/a4/numpy-2.5.3-cp314-cp314-win_amd64.whl'\n"
+"                sha = '2c25dfa72943e4336ddb6b0ee4277b47a0c85bede0807530ec68103bf58e2c10' }\n"
+"    dxc    = @{ url = 'https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.9.2607/dxc_2026_07_29.zip'\n"
+"                sha = 'a1dfb116ba3eeae6a1582291b53a8e7bf65ad760676bd3194685c8f7367cd241' }\n"
+"    plain  = @{ url = 'http://example.test/no-tls.zip'\n"
+"                sha = 'a1dfb116ba3eeae6a1582291b53a8e7bf65ad760676bd3194685c8f7367cd241' }\n"
+"    short  = @{ url = 'https://example.test/short.zip'; sha = 'abc' }\n"
+"}\n");
+        const auto tools = setupDownloads(ps1);
+        for (const QString& t : kSetupTools)
+            QVERIFY2(tools.contains(t), qPrintable(t));
+        QCOMPARE(tools.size(), 3);   // not over plain http, not without a full SHA-256
+        QCOMPARE(tools["python"].url, QString("https://www.python.org/ftp/python/3.14.8/python-3.14.8-embed-amd64.zip"));
+        QCOMPARE(tools["python"].sha256, QString("a93abe456ab01bd96d7a085b3cdb6566b3063f4241360d114142fbdb07f0a310"));
+        QVERIFY(tools["dxc"].url.endsWith("dxc_2026_07_29.zip"));
+        QVERIFY(setupDownloads("Write-Host 'nothing here'").isEmpty());
+    }
+
+    void buildNeverRunsTheGameStep()
+    {
+        const QStringList build = setupBuildArgs("C:/hx/HelixSR-2.0.0", "C:/data/dxc/dxc.exe");
+        QCOMPARE(build.first(), QString("-I"));
+        QCOMPARE(build.at(1), QString("C:/hx/HelixSR-2.0.0/setup/helixsr_setup.py"));
+        QVERIFY(build.contains("--no-fg"));
+        QVERIFY(build.contains("--yes"));
+        QCOMPARE(build.at(build.indexOf("--dxc") + 1), QString("C:/data/dxc/dxc.exe"));
+        const QString joined = build.join(' ');
+        QVERIFY(!joined.contains("helixsr_install"));
+        QVERIFY(!joined.contains(".ps1"));
+        QVERIFY(setupStatusArgs("C:/hx/HelixSR-2.0.0").contains("--status"));
+    }
+
+    void buildStatusLine()
+    {
+        QVERIFY(parseBuildStatus("network=1 fg=0\n")->network);
+        QVERIFY(!parseBuildStatus("network=1 fg=0\n")->frameGeneration);
+        QVERIFY(!parseBuildStatus("[helixsr-setup] x\r\nnetwork=0 fg=1\r\n")->network);
+        QVERIFY(parseBuildStatus("network=0 fg=1")->frameGeneration);
+        QVERIFY(!parseBuildStatus("Traceback (most recent call last):").has_value());
+    }
+
+    void bridgeAlwaysInstallsTheFsrDropIn()
+    {
+        const QStringList install = bridgeArgs("C:/hx/HelixSR-2.0.0", true, "D:/Games/Horizon");
+        QCOMPARE(install, (QStringList{"-I", "C:/hx/HelixSR-2.0.0/setup/helixsr_bridge.py", "C:/hx/HelixSR-2.0.0",
+                                       "install", "--game", "D:/Games/Horizon", "--way", "fsr"}));
+        const QStringList remove = bridgeArgs("C:/hx/HelixSR-2.0.0", false, "D:/Games/Horizon");
+        QCOMPARE(remove.at(3), QString("remove"));
+        QVERIFY(!remove.contains("--way"));
+        QVERIFY(!install.contains("scaler") && !install.contains("auto"));
+    }
+
+    void bridgeReplies()
+    {
+        // recorded from HelixSR 2.0.0's bridge (paths shortened)
+        const BridgeReply installed = parseBridgeReply(QString::fromUtf8(json(
+"{'protocol': 1, 'ok': true, 'game': {'id': 'C:\\\\g\\\\bin', 'name': 'bin', 'inputs': ['FSR 3.1'], 'ways': ['scaler', "
+"'fsr'], 'recommended': 'scaler', 'anticheat': [], 'installed': 'fsr', 'version': '2.0.0', 'settings_path': "
+"'C:\\\\g\\\\bin\\\\helixsr.ini'}, 'messages': ['installed C:\\\\g\\\\bin\\\\amd_fidelityfx_dx12.dll (the game\\'s "
+"file kept as amd_fidelityfx_dx12.original.dll)']}\n")));
+        QVERIFY(installed.ok);
+        QVERIFY(installed.compatible);
+        QCOMPARE(installed.installedWay, QString("fsr"));
+        QCOMPARE(installed.installedVersion->toString(), QString("2.0.0"));
+        QCOMPARE(installed.messages.size(), 1);
+
+        const BridgeReply removed = parseBridgeReply(QString::fromUtf8(json(
+"{'protocol': 1, 'ok': true, 'game': {'installed': null, 'version': null}, 'messages': []}")));
+        QVERIFY(removed.ok);
+        QVERIFY(removed.installedWay.isEmpty());
+        QVERIFY(!removed.installedVersion);
+
+        // Python's warnings come before the JSON line
+        const BridgeReply failed = parseBridgeReply(QString::fromUtf8(json(
+"<frozen>: SyntaxWarning: invalid escape sequence\r\n"
+"{'protocol': 1, 'ok': false, 'error': 'the network is not built yet', 'messages': []}\r\n")));
+        QVERIFY(failed.compatible);
+        QVERIFY(!failed.ok);
+        QCOMPARE(failed.error, QString("the network is not built yet"));
+
+        QVERIFY(!parseBridgeReply(QString::fromUtf8(json("{'protocol': 2, 'ok': true}"))).compatible);
+        QVERIFY(!parseBridgeReply("Traceback (most recent call last):\n  File x\nNameError: y").compatible);
+        QVERIFY(!parseBridgeReply("").ok);
+    }
+
+    void packageLayouts()
+    {
+        QTemporaryDir one, two;
+        touch(one.filePath("amd_fidelityfx_dx12.dll"));
+        touch(one.filePath("setup/helixsr_install.py"));
+        QCOMPARE(packageDll(one.path()), one.filePath("amd_fidelityfx_dx12.dll"));
+        QVERIFY(!hasBridge(one.path()));
+
+        touch(two.filePath("HelixSR-fsrfg/amd_fidelityfx_dx12.dll"));
+        touch(two.filePath("setup/helixsr_bridge.py"));
+        QCOMPARE(packageDll(two.path()), two.filePath("HelixSR-fsrfg/amd_fidelityfx_dx12.dll"));
+        QVERIFY(hasBridge(two.path()));
     }
 
     void scanGameAsyncDeliversTheSameResultOnTheCallersThread()

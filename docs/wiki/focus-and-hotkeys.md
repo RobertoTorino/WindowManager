@@ -49,8 +49,10 @@ It works best together with:
   **Ctrl+M** moves it by hand.
 - **The mouse.** **Ctrl+Alt+M** frees the mouse from a game that holds it (Unreal Engine games do while they
   have the focus) and brings the app to the front. Click the game to give it the mouse back.
-- **The floating bar.** Minimising the app turns it into a small always-on-top bar with the game's name,
-  FPS, CPU, GPU and the first warning. See [Game stats](game-stats.md#floating-bar).
+- **The floating bar.** Minimising the app turns it into a small always-on-top bar with the game's name
+  and *Open*. See [Floating bar](game-stats.md#floating-bar).
+- **The game info overlay.** **Ctrl+Alt+I** shows or hides the panel over the game (scaler, picture sizes,
+  FPS, warnings). It never takes the keyboard. See [Game info overlay](game-stats.md).
 
 The game log shows who had the focus and when the mouse was held (`Foreground` and `Mouse` lines); see
 [Logs and troubleshooting](logs-and-troubleshooting.md#the-games-windows-focus-and-mouse).

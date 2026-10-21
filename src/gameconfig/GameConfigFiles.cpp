@@ -200,6 +200,18 @@ Status status(const QString& exePath)
                           .arg(valueText(IniText::value(readText(l.platformIni).text, "SystemSettings", "r.setres")));
     lines << resolution;
 
+    st.renderScale = IniText::value(engine.text, "SystemSettings", "r.ScreenPercentage").value_or(QString()).toInt();
+    st.width = IniText::value(user.text, "/Script/Engine.GameUserSettings", "ResolutionSizeX").value_or(QString()).toInt();
+    st.height = IniText::value(user.text, "/Script/Engine.GameUserSettings", "ResolutionSizeY").value_or(QString()).toInt();
+    if ((st.width <= 0 || st.height <= 0) && st.platformIni) {
+        const QStringList setres = IniText::value(readText(l.platformIni).text, "SystemSettings", "r.setres")
+                                       .value_or(QString()).split('x');
+        if (setres.size() == 2) {
+            st.width = setres[0].trimmed().toInt();
+            st.height = setres[1].trimmed().toInt();
+        }
+    }
+
     QFile jconfig(l.jconfigFile);
     if (jconfig.open(QIODevice::ReadOnly)) {
         if (const auto w = readJConfig(jconfig.readAll())) {

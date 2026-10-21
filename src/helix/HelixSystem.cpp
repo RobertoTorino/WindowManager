@@ -189,8 +189,6 @@ Verdict evaluate(const SystemInfo& system)
     }
     v.checks << Check{system.hasTar ? Level::Supported : Level::Unsupported, "tar.exe",
                       system.hasTar ? "found (unpacks the download)" : "missing (Windows 10 1803 or newer has it)"};
-    v.checks << Check{system.hasPowerShell ? Level::Supported : Level::Unsupported, "Windows PowerShell",
-                      system.hasPowerShell ? "found (runs HelixSR's setup)" : "missing"};
 
     v.level = Level::Supported;
     for (const Check& c : v.checks)

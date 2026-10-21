@@ -23,6 +23,11 @@ started last time.
 **Write now** writes the settings at once (restart a running game to see them). **Restore
 originals** puts the game's own values back. **Open folder** opens the game's `Config` folder.
 
+!!! warning "Turning the tab off does not undo Write now"
+    The settings stay in the game's files until you change them or press **Restore originals**: switching
+    *Write these settings when &lt;game&gt; starts* off only stops the app writing them again. The game info overlay shows
+    what the files hold (*Game files*) while the game runs.
+
 *Now in the files* shows what the files hold right now, so you can see the effect of each button.
 
 ## Render scale explained (with an example)
@@ -57,7 +62,7 @@ keeps what it read at start-up: restart it to see the change.
 5. **JConfig window**: tick it and pick the monitor you play on.
 6. Press **Start** (or **Restart** if the game is already running). The app writes the files, then
    starts the game.
-7. Look at the stats bar: if the **FPS** drops below 60 (Tekken runs at 60), go back to 125 %.
+7. Look at the game info overlay (Ctrl+Alt+I): if the **FPS** drops below 60 (Tekken runs at 60), go back to 125 %.
    If it stays at 60, you can try 200 %.
 
 **Quick test that it works:** set 50 % and start the game once. It should look clearly blurry. If
@@ -90,6 +95,10 @@ afterwards writes JConfig's values again; the app writes its own again on the ne
 - Sharper picture: also **Render scale** 150 % (or 200 % on a fast card). The window stays
   1920 x 1080, so the downscaled view is not needed.
 - A slow laptop: **Render scale** 67 % or 75 %.
+- With **Magpie**: a **Resolution** below the monitor's (1280 x 720 or 1600 x 900), render scale 100 %. In window
+  mode Tekken's window follows the resolution; one bigger than the monitor (3840 x 2160) is shrunk by Magpie into a
+  squeezed picture. On a GTX 1650 Tekken already holds 60 FPS at 1920 x 1080 with the GPU at about 30 %, so
+  upscaling saves nothing there: compare on the [Reports](reports.md) tab.
 - Check the game log (`logs/<game>.log`, lines with `GameConfig`) for what was written, and the
   `Watch` lines for what the game did with its window.
 

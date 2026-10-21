@@ -95,7 +95,6 @@ QToolTip { background: #25272b; color: #e6e6e6; border: 1px solid #3a3d41; }
 QLabel#hint { color: #8b8f95; }
 QLabel#fitDelta { font-size: 15px; font-weight: 600; color: #e6e6e6; }
 QLabel#fitOk { color: #2fb86a; font-weight: 600; }
-QToolBar#statsBar { background: #17181a; border: none; border-top: 1px solid #2c2e32; padding: 3px 6px; }
 QLabel#statValue { color: #e6e6e6; }
 QWidget#miniBar { background: #17181a; border: 1px solid #3a3d41; }
 QLabel#miniGame { color: #e6e6e6; font-weight: 600; }

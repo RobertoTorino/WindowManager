@@ -25,6 +25,8 @@ private slots:
         g.display.width = 1280;
         g.display.height = 720;
         g.display.hdr = 1;
+        g.magpie.mode = "FSR";
+        g.magpie.game3D = true;
         cfg.saveGame(g);
         cfg.setCurrentExePath(g.applicationPath);
         cfg.saveWindowProfile(g.applicationPath, 10, 20, 1280, 720);
@@ -42,6 +44,7 @@ private slots:
         QVERIFY(game->helixConfirmed);
         QCOMPARE(game->steamAppId, 1593500u);
         QCOMPARE(game->display, g.display);
+        QCOMPARE(game->magpie, g.magpie);
 
         const auto prof = cfg.getWindowProfile(g.applicationPath);
         QVERIFY(prof.has_value());
@@ -66,6 +69,7 @@ private slots:
         QVERIFY(cfg.load());
         QVERIFY(!cfg.gameByPath("C:/a.exe")->helixConfirmed);
         QVERIFY(!cfg.gameByPath("C:/a.exe")->display.enabled);   // no display settings either
+        QVERIFY(!cfg.gameByPath("C:/a.exe")->magpie.enabled());   // and no Magpie
     }
 
     void clearProfile()

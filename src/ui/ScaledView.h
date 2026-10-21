@@ -39,6 +39,10 @@ public:
     bool isRunning() const { return m_running; }
     QString description() const { return m_description; }
     int monitorIndex() const { return m_running ? m_monitorIndex : 0; }   // the monitor it covers; 0: not running
+    int renderWidth() const { return m_running ? m_gameW : 0; }    // the game's drawn area
+    int renderHeight() const { return m_running ? m_gameH : 0; }
+    int shownWidth() const { return m_running ? m_dest.width() : 0; }   // the picture on the monitor
+    int shownHeight() const { return m_running ? m_dest.height() : 0; }
 
     bool start(const Options &options, QString *error = nullptr);
     void stop(const QString &reason = {});

@@ -6,6 +6,42 @@ Notable changes to WindowManager. The version number lives in `APP_VERSION` in `
 ## Unreleased
 
 ### Added
+- **Game info overlay** (Windows): a see-through panel in a corner of the game's monitor, once a second: which
+  scaler shows the picture (Magpie and its effect, the downscaled view, none), from what size to what size, the
+  scale and *upscaling* / *downscaling* (Magpie's numbers are read from its own scaling window), *starting* /
+  *paused* / *not scaling* with the reason, the resolution and render scale in the game's files, the game's window
+  and monitor (with refresh rate), FPS, CPU / GPU, RAM / VRAM, power, and the warnings with what to do (a window
+  bigger than its monitor, Magpie not scaling, on battery, integrated GPU...). Clicks go through it, it never takes
+  the keyboard, stays above Magpie's full-screen picture and is left out of screenshots, snapshots and recordings
+  (unless ticked). *View > Game info overlay* (show, corner, in screenshots), **Ctrl+Alt+I** from anywhere.
+  The **status bar** shows the scaler line at all times (orange with the reason in the tooltip), and the game log
+  gets a `[Picture]` line when it changes. `tst_picture`.
+  The overlay and the log also show **Magpie's own GPU use** (`GPU 29 % + Magpie 6 %`: its upscaling runs in
+  `Magpie.exe`), and while Magpie waits or pauses they name the program in front (`JConfigTK7R2.exe is in front,
+  click the game`).
+- **Reports tab** (Windows): every game session is recorded once a second (`reports/<game>/<start>-samples.csv`:
+  FPS, 1 % low, CPU, GPU, Magpie's GPU, RAM, VRAM, the setup), with a summary per session (`<start>.json`, per setup
+  averages and peaks) and a row in `reports/sessions.csv`; no private data. Pick a game to see its sessions, a
+  session over time (FPS above, GPU below, coloured by setup, hover for values), and its setups compared over all
+  sessions (average FPS, 1 % low, GPU game + Magpie). **Compare picture** captures the game's own frame and Magpie's
+  picture at the same moment, stretches the frame plainly (bilinear) for comparison, scores the sharpness and saves a
+  side-by-side zoom (*Magpie FSR is 15.5 % sharper than a plain stretch*). Charts are drawn by the app (no Qt Charts).
+  *Larger view* opens the tab in a window. Help page *Reports*, wiki page *Reports*; `tst_report`.
+- Wiki: the *Game config* page warns that turning the tab off does not undo *Write now* (the settings stay in the
+  game's files until *Restore originals*), and has Tekken 7 settings for Magpie (a resolution below the monitor's).
+- **Magpie tab** (Windows): sets up and updates the app's own copy of [Magpie](https://github.com/Blinue/Magpie), a
+  window upscaler that works with any game (DirectX 11/12, Vulkan, emulators). The release zip is checked against
+  its SHA-256 digest and kept in the `magpie` folder next to the program in Magpie's portable mode, so a Magpie the
+  user installed is not changed; Magpie is started once so it writes its default settings. The set-up stops when
+  another Magpie is running (only one can run). Updates keep Magpie's settings, shader cache and logs.
+  **Per game** (*Selected game > Scale with*: an effect from Magpie's list, or Off; optional 3D game mode): on
+  Start the app writes the game's Magpie profile from its settled window (class and exe path) and starts Magpie,
+  which scales the window whenever it is in front; Magpie closes when the game ends. For such a game the fit check
+  after Start is skipped and Stability is turned off (both would stop the scaling). A game that shows a splash
+  window first gets its profile written again for its real window (Tekken 7's first run had a profile for its
+  splash screen, so it was not scaled). A game window bigger than its monitor gets a warning: Magpie only scales
+  up and shrinks such a window, squeezed (Tekken 7 with a 3840 x 2160 resolution on a 1920 x 1080 monitor).
+  Help page *Magpie*; `tst_magpie`.
 - **Demo video** on the wiki's home page (*See it in action*): a one-minute tour of Start, Fit to monitor, the
   F1 focus switch, Windowed, exact sizes, snapshots and Kill. `scripts/demo-video/record-demo.ps1` records it
   again (stand-in game, captions, 1080p for YouTube and 720p for the wiki).
@@ -79,6 +115,9 @@ Notable changes to WindowManager. The version number lives in `APP_VERSION` in `
   browser.
 
 ### Changed
+- **The game stats bar is gone**: its numbers and warnings are on the game info overlay. The floating bar shows
+  the game's name and *Open* only. The stats are read whenever a game runs (the game log's minute summary no
+  longer depends on a bar being shown). The status bar shows the target's file name (full path in the tooltip).
 - New app icon (window, taskbar and the `.exe`).
 - **The README and the in-app help are short now**: the README says what the app is for and how to get started;
   each help page has the highlights and a link to its wiki page. New help topic *Focus and hotkeys*; the window
@@ -126,10 +165,16 @@ Notable changes to WindowManager. The version number lives in `APP_VERSION` in `
   which Qt's `QGuiApplication` header declares on Linux. The namespace is now `DisplayModel`. Checked with a
   Linux build in WSL (Ubuntu 26.04, Qt 6.10): it builds and the 12 tests pass. The floating bar hides its stats
   where there is no stats backend (Linux), instead of always saying "Game not running".
-- **HelixSR 2.0.0 is not set up.** Its setup, run unattended as this app does, goes on to install HelixSR
-  Scaler into every game it finds and turns on frame generation, and its installer no longer has the
-  functions the app's install helper calls. The app now sets up and updates HelixSR 1.x only (1.9.3) and
-  the tab says when a newer version is out that it does not support yet.
+- **HelixSR 2.x is set up without its game step.** HelixSR 2.0's `helixsr-setup.ps1`, run unattended, goes on to
+  install HelixSR Scaler into every game it finds with frame generation on, and its installer no longer has the
+  functions the app's 1.x helper calls. The app no longer runs the `.ps1`: it reads the addresses and SHA-256 sums
+  of Python, numpy and the shader compiler from it, downloads and checks them itself, and runs HelixSR's build
+  script (`setup/helixsr_setup.py --yes --no-fg`; no frame generation, which only HelixSR Scaler uses). Games are
+  installed into and removed from through HelixSR 2's JSON bridge (`setup/helixsr_bridge.py`), always as the FSR
+  drop-in (`--way fsr`), one game at a time. 1.x packages already built keep using the old helper. HelixSR 3 and
+  later are not offered until the app supports them. The system check no longer needs PowerShell.
+- The HelixSR installer self-test left its throw-away folder behind (`helixsr/selftest`): the restored test DLL
+  was still open when the folder was deleted.
 - The system check's message for a card below shader model 6.6 no longer promises that a driver update
   fixes it: HelixSR's shaders are built for 6.6, and a card whose newest driver stops at 6.5 cannot run it.
 - Windows: a Steam game that was already in the list (added by hand) was added a second time, because

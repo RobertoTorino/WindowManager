@@ -4,6 +4,7 @@
 #include "platform/PlatformBackend.h"
 
 #include <QDir>
+#include <QFileInfo>
 #include <QTimer>
 
 FocusMonitor::FocusMonitor(WindowManagerController *controller, QObject *parent)
@@ -26,6 +27,7 @@ void FocusMonitor::poll()
         m_lastPid = pid;
         m_lastExe = exe;
         const QString image = pid ? os.processImagePath(pid) : QString();
+        m_lastName = QFileInfo(image).fileName();
         m_lastRunsGame = !image.isEmpty() && !exe.isEmpty()
                          && QDir::cleanPath(image).compare(QDir::cleanPath(exe), Qt::CaseInsensitive) == 0;
     }

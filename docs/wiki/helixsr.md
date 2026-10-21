@@ -12,7 +12,7 @@ own setup.
 
 HelixSR runs as Direct3D 12 compute shaders. The line *This PC* at the top of the tab, and **Check this PC**,
 test your graphics adapters (shader model 6.6, 16-bit math, SIMD width), the free disk space (about 1.5 GB
-while setting up), `tar.exe` and PowerShell. The check also runs before every set-up.
+while setting up) and `tar.exe`. The check also runs before every set-up.
 
 | Result | Meaning |
 |---|---|
@@ -31,9 +31,10 @@ Press **Set up HelixSR**, read the notice and choose **Download and build**.
 
 1. HelixSR is downloaded from its GitHub releases and checked against the published SHA-256.
    A file that does not match is deleted.
-2. HelixSR's own setup downloads Python, a shader compiler and NVIDIA's DLSS 310.7.0 DLL, and
-   builds the network on this PC. **This takes about 5 to 6 minutes.** A progress bar and a
-   running timer show how far it is. **Cancel** stops it and removes what it made.
+2. Python, numpy and a shader compiler are downloaded from the addresses HelixSR's setup names and checked
+   against its SHA-256 sums. HelixSR's build script then downloads NVIDIA's DLSS 310.7.0 DLL and builds the
+   network on this PC. **This takes about 5 to 6 minutes.** A progress bar and a running timer show how far
+   it is. **Cancel** stops it and removes what it made. No game is changed while setting up.
 3. Afterwards the app deletes what is no longer needed: the downloaded DLSS DLL, the shader
    compiler, numpy, the archives and HelixSR Scaler's files. HelixSR and a small Python stay.
 
@@ -47,9 +48,12 @@ If HelixSR is set up, the app checks GitHub for a newer release when it starts (
 *HelixSR (update)* and the button reads *Update to x.y.z*. The update downloads and builds the new
 version, removes the old one, and offers to update the games that still have the older DLL.
 
-The app sets up HelixSR 1.x only. HelixSR 2.0 changed its setup: run unattended, it installs HelixSR
-Scaler into every game it finds. Until the app supports that, the tab shows *HelixSR 2.0.0 is out; this
-app does not support it yet* and keeps offering the newest 1.x version.
+HelixSR 2.0's own setup (`helixsr-setup`), run unattended, goes on to install HelixSR Scaler into every
+game it finds, with frame generation on. The app never runs that step: it runs only HelixSR's build script
+(without frame generation, which only HelixSR Scaler uses) and puts HelixSR into the games you pick, through
+HelixSR's own installer (its JSON bridge), always as the FSR drop-in. A HelixSR 1.x that is already set up
+keeps working until you update. A newer major version (3.x) is shown as *is out; this app does not support it
+yet* until the app has been checked against it.
 
 ## Games
 
@@ -90,9 +94,9 @@ Restart the game for the change to apply.
 ## If installing is switched off
 
 After a build the app tries HelixSR's installer on a throw-away folder. If a newer HelixSR changed its
-installer so that WindowManager's helper no longer fits, the tab says so and **Install**, **Remove** and
+installer so that WindowManager no longer fits it, the tab says so and **Install**, **Remove** and
 **Run** are disabled until WindowManager is updated. The built HelixSR is not lost: **Open folder** shows it,
-and running `helixsr-setup` there installs it into games by hand.
+and running `helixsr-setup` there installs it into games by hand (it asks about each game it finds).
 
 ## Good to know
 

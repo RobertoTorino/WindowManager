@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QElapsedTimer>
 #include <QList>
 #include <QMainWindow>
 
@@ -8,10 +9,16 @@
 class ControlPanel;
 class DisplaySession;
 class FocusMonitor;
+class GameOverlay;
 class GameWatch;
 class GameBar;
 class HelixPanel;
+class MagpiePanel;
+class MagpieSession;
+class PictureCompare;
 class QAction;
+class ReportsPanel;
+class SessionRecorder;
 class QActionGroup;
 class QCloseEvent;
 class ScaledView;
@@ -20,9 +27,7 @@ class QPushButton;
 class QTabWidget;
 class SnapshotCapture;
 class MiniBar;
-class StatsBar;
 class StatsMonitor;
-class QToolBar;
 class WindowManagerController;
 class WindowTable;
 
@@ -73,7 +78,9 @@ private:
     void applyOpacity();               // View > Window opacity (and only while a game runs)
     void showMiniBar();
     void restoreFromMiniBar();
-    void updateStatsMonitor();
+    void comparePicture();             // Reports tab > Compare picture
+    void updatePicture();              // the status bar's scaler line and the game info overlay, every second
+    void readGameFiles();              // the game's render scale / resolution as its files hold them now
     void releaseMouse();
     void switchFocus();                // the focus-switch hotkey: game -> this app, else -> the game
     void takeForeground();             // to the front, and locked there against the game taking it back
@@ -97,9 +104,25 @@ private:
     QTabWidget  *m_tabs{nullptr};
     QList<ControlPanel *> m_panels;
     HelixPanel  *m_helix{nullptr};
-    StatsBar    *m_stats{nullptr};
-    QToolBar    *m_statsBar{nullptr};   // null when the platform has no stats backend
+    MagpiePanel *m_magpie{nullptr};
+    MagpieSession *m_magpieSession{nullptr};   // Magpie for the game being started
+    ReportsPanel *m_reports{nullptr};
+    SessionRecorder *m_recorder{nullptr};    // records each game session for the Reports tab
+    PictureCompare *m_pictureCompare{nullptr};
+    bool         m_hiddenForCompare{false};
     StatsMonitor *m_monitor{nullptr};   // null when the platform has no stats backend
+    GameOverlay *m_overlay{nullptr};    // a window of its own, deleted with this one; null without stats
+    QAction     *m_overlayAction{nullptr};
+    QAction     *m_overlayCaptureAction{nullptr};
+    QElapsedTimer m_magpieSince;          // since the app's Magpie was first seen running
+    QActionGroup *m_overlayCornerGroup{nullptr};
+    QLabel      *m_scalerLabel{nullptr};  // status bar: which scaler shows the game's picture
+    QString      m_lastPictureLog;        // the picture is logged when this changes
+    int          m_fileScale{0};          // readGameFiles()
+    int          m_fileWidth{0};
+    int          m_fileHeight{0};
+    bool         m_filesChanged{false};
+    int          m_pictureTicks{0};
     MiniBar     *m_mini{nullptr};       // a window of its own, deleted with this one
     GameWatch   *m_watch{nullptr};      // diagnostic log of the game's windows, focus and mouse
     FocusMonitor *m_focus{nullptr};     // who has the keyboard: the game, this app or another program

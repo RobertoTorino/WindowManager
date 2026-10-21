@@ -222,6 +222,9 @@ private slots:
         QVERIFY(st.summary.contains("r.ScreenPercentage not set"));
         QVERIFY(st.summary.contains("r.setres 1280x720"));
         QVERIFY(st.summary.contains("window 1280 x 720 at 16,16"));
+        QCOMPARE(st.renderScale, 0);   // not set
+        QCOMPARE(st.width, 1920);      // from the user settings (r.setres is the fallback)
+        QCOMPARE(st.height, 1080);
 
         Settings s;
         s.enabled = true;
@@ -246,7 +249,9 @@ private slots:
         QCOMPARE(readAll(l.engineIni + kOriginalSuffix), kEngineIni);
         QCOMPARE(readAll(l.jconfigFile + kOriginalSuffix), jconfigBytes());
         QVERIFY(!QFile::exists(l.userSettingsIni + kOriginalSuffix));   // nothing changed there
-        QVERIFY(status(exe).changed);
+        st = status(exe);
+        QVERIFY(st.changed);
+        QCOMPARE(st.renderScale, 150);   // what the game will read now (the game info overlay shows it)
 
         // the same again changes nothing
         QVERIFY(apply(exe, s, &message));

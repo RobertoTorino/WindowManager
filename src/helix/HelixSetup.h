@@ -9,6 +9,7 @@
 #include <QPointer>
 #include <QString>
 
+#include "helix/HelixBridge.h"
 #include "helix/HelixPaths.h"
 #include "helix/HelixRelease.h"
 
@@ -18,8 +19,10 @@ class QProcess;
 
 /**
  * Runs the HelixSR setup for the user: finds the newest release, downloads and verifies it,
- * lets HelixSR's own setup build the network on this PC, removes what is no longer needed,
- * and installs HelixSR into (or removes it from) a game's FSR 3.1 DLL.
+ * downloads the setup's tools (Python, numpy, DXC) and lets HelixSR's own setup script build the
+ * network on this PC, removes what is no longer needed, and installs HelixSR into (or removes it
+ * from) a game's FSR 3.1 DLL. HelixSR's helixsr-setup.ps1 is never run: its last step installs into
+ * every game it finds.
  *
  * One job at a time; everything is asynchronous and reported through signals. The decisions
  * (versions, which DLL, what to delete) live in the pure helix/ units.
@@ -46,8 +49,9 @@ public:
     std::optional<Helix::Version> unsupportedNewer() const;
     QString lastError() const { return m_lastError; }
     bool    ready() const;   // built, and Python is there to install into games
-    // The install helper script has passed its self-test against the built package. When it has not
-    // (HelixSR changed its installer), driverProblem() says why and games cannot be installed into.
+    // The installer (HelixSR's bridge for 2.x, resources/helixsr_driver.py for 1.x) has passed its
+    // self-test against the built package. When it has not (HelixSR changed its installer),
+    // driverProblem() says why and games cannot be installed into.
     bool    driverOk() const { return m_driverOk; }
     QString driverProblem() const { return m_driverProblem; }
     bool    canInstall() const { return ready() && m_driverOk; }
@@ -77,17 +81,26 @@ private:
     void abortJob();
 
     void fetchExpectedHash();
+    // Downloads `url` to `dest` (through dest.part), checks its SHA-256 and calls `next`; fails the job otherwise.
+    void fetchFile(const QString& url, const QString& dest, const QString& sha256, const QString& title,
+                   qint64 sizeHint, std::function<void()> next);
+    // Unpacks a zip (or wheel) into `destDir` with tar.exe; done(ok, output).
+    void unpack(const QString& archive, const QString& destDir, std::function<void(bool, const QString&)> done);
     void downloadZip();
     void extractZip();
+    void prepareTools();   // Python + numpy and DXC for the setup, as helixsr-setup.ps1 gets them
     void buildNetwork();
     void finishBuild();
     void cleanUp();
 
     void runGameJob(const QString& exePath, bool install);
-    // Runs resources/helixsr_driver.py with `args` (command, folder); done(exitCode, output), -1 if it could not run.
-    void runDriver(const QStringList& args, std::function<void(int, const QString&)> done);
+    // Runs Python of the HelixSR setup with `args`; done(exitCode, output), -1 if it could not run.
+    void runPython(const QStringList& args, std::function<void(int, const QString&)> done);
+    // Installs into or removes from the game in `folder` with the package's installer.
+    void runInstaller(bool install, const QString& folder, std::function<void(int, const QString&)> done);
     void testDriver(std::function<void(bool, const QString&)> done);
     static QByteArray driverScript();
+    QString installerFingerprint() const;
     static QString describeFailure(int exitCode, const QString& output);
     void handleBuildOutput(const QByteArray& data);
 
@@ -105,7 +118,6 @@ private:
     std::optional<Helix::Package> m_package;
     bool m_installAfterCheck{false};
     bool m_cancelled{false};
-    bool m_networkBuilt{false};
     bool m_driverOk{false};
     QString m_driverProblem;
 
@@ -114,5 +126,6 @@ private:
     QCryptographicHash m_hash{QCryptographicHash::Sha256};
     QString m_zipPath;
     QString m_buildDir;       // the package being built; removed again if the build fails
+    QMap<QString, Helix::ToolDownload> m_tools;   // from the release's helixsr-setup.ps1
     QByteArray m_lineBuffer;
 };

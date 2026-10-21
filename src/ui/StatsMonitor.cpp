@@ -2,6 +2,8 @@
 
 #include "WindowManagerController.h"
 #include "core/Logger.h"
+#include "magpie/MagpieProcess.h"
+#include "magpie/MagpieRelease.h"
 #include "stats/StatsBackend.h"
 #include "window/WindowManager.h"
 
@@ -14,6 +16,7 @@ namespace {
 
 constexpr int    kIntervalMs    = 1000;
 constexpr qint64 kPidSearchMs   = 5000;
+constexpr qint64 kMagpieSearchMs = 3000;
 constexpr qint64 kFirstLogMs    = 10'000;   // the first summary, once FPS and CPU have settled
 constexpr qint64 kLogIntervalMs = 60'000;
 
@@ -60,27 +63,41 @@ qint64 StatsMonitor::gamePid()
     return m_foundPid;
 }
 
+qint64 StatsMonitor::magpiePid()
+{
+    if (m_magpieSearch.isValid() && m_magpieSearch.elapsed() < kMagpieSearchMs)
+        return m_magpiePid;
+    m_magpieSearch.restart();
+    m_magpiePid = 0;
+    for (const auto &m : Magpie::runningMagpies()) {   // the app's own copy first
+        if (!m_magpiePid || Magpie::isFrom(m, Magpie::installDir()))
+            m_magpiePid = m.pid;
+    }
+    return m_magpiePid;
+}
+
 void StatsMonitor::tick()
 {
     if (m_busy)
         return;
     m_busy = true;
     const qint64 pid = gamePid();
+    const qint64 magpie = pid ? magpiePid() : 0;
     const bool needAdapters = m_adapters.empty();
     QPointer<StatsMonitor> self(this);
-    QThreadPool::globalInstance()->start([self, pid, needAdapters]() {
+    QThreadPool::globalInstance()->start([self, pid, magpie, needAdapters]() {
         StatsBackend &backend = statsBackend();
         const auto adapters = needAdapters ? backend.adapters() : std::vector<Stats::Adapter>{};
         const Stats::RawSample raw = backend.sample(pid);
         if (!self)
             return;
-        QMetaObject::invokeMethod(self.data(), [self, pid, raw, adapters]() {
+        QMetaObject::invokeMethod(self.data(), [self, pid, magpie, raw, adapters]() {
             if (!self)
                 return;
             self->m_busy = false;
             if (!adapters.empty())
                 self->m_adapters = adapters;
-            self->m_last = self->m_sampler.update(pid, raw, self->m_adapters);
+            self->m_last = self->m_sampler.update(pid, raw, self->m_adapters, magpie);
             if (pid && !self->m_last.running)
                 self->m_deadPid = pid;
             self->log(self->m_last);

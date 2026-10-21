@@ -31,6 +31,7 @@ signals:
 private:
     void tick();
     qint64 gamePid();
+    qint64 magpiePid();   // a running Magpie.exe, looked up every few seconds; 0: none
     void log(const Stats::GameStats &stats);
 
     WindowManagerController *m_controller;
@@ -45,6 +46,8 @@ private:
     qint64        m_foundPid{0}; // found by looking for the target's process
     qint64        m_deadPid{0};  // the last pid that turned out to have exited
     QElapsedTimer m_pidSearch;   // that search runs at most every 5 s
+    qint64        m_magpiePid{0};
+    QElapsedTimer m_magpieSearch;
 
     QElapsedTimer m_running;     // since the game was first seen running
     qint64        m_nextLogMs{0};

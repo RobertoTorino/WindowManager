@@ -133,6 +133,7 @@ struct GameStats
     std::optional<double> cpu;         // percent of the whole CPU
     std::optional<double> systemCpu;
     std::optional<double> gpu;
+    std::optional<double> magpieGpu;   // Magpie's own GPU use while it runs (its FSR work is not in `gpu`)
     QString gpuName;                   // the adapter the game renders on
     std::optional<quint64> ram;        // working set, bytes
     std::optional<quint64> vram;       // dedicated video memory, bytes
@@ -183,7 +184,8 @@ class Sampler
 public:
     static constexpr qint64 kFpsWindowNs = 1'000'000'000;
 
-    GameStats update(qint64 pid, const RawSample& raw, const std::vector<Adapter>& adapters);
+    // magpiePid: a running Magpie.exe (0: none), whose GPU use is read from the same counters.
+    GameStats update(qint64 pid, const RawSample& raw, const std::vector<Adapter>& adapters, qint64 magpiePid = 0);
     void reset();
 
 private:

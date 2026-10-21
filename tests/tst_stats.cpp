@@ -414,6 +414,15 @@ private slots:
         QCOMPARE(*s.systemCpu, 50.0);
         QCOMPARE(*s.gpu, 90.0);
         QCOMPARE(s.gpuName, QString("NVIDIA GeForce GTX 1650"));
+        QVERIFY(!s.magpieGpu.has_value());   // no Magpie running
+
+        // Magpie's FSR work is in its own process: read from the same counters, kept apart from the game's
+        RawSample third = alive(2000 * kMs, 30'000'000);
+        third.gpuEngines = {{engine(10, kNvidiaLuid, 0, "3D"), 60}, {engine(77, kNvidiaLuid, 0, "3D"), 7}};
+        s = sampler.update(10, third, adapters, 77);
+        QCOMPARE(*s.gpu, 60.0);
+        QCOMPARE(*s.magpieGpu, 7.0);
+        QVERIFY(summaryLine(s).contains("GPU 60 % on NVIDIA GeForce GTX 1650 + Magpie 7 %"));
     }
 
     void samplerCollectsPresentsAcrossSamples()

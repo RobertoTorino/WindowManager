@@ -24,7 +24,7 @@ Bazzite in Desktop Mode (KDE Plasma) and tested there with GOD EATER 3 under Pro
 |---|---|
 | Downscaled view and Ctrl+Alt+D | Not built for Linux yet. The app says *The downscaled view is not available on this system yet*. |
 | Display tab | Changes Windows' display settings. On Linux it says *Display settings are not available on this system yet*. KDE's `kscreen-doctor` could do it later. |
-| Game stats bar | Reads Windows' performance counters and DirectX events. On Linux the bar is not shown. `/proc` (CPU, memory) and a Vulkan layer (frames) could do it later. |
+| Game info overlay | Reads Windows' performance counters, DirectX events and Magpie's window. On Linux it is not shown. `/proc` (CPU, memory) and a Vulkan layer (frames) could do it later. |
 | Layered, No Activate | These are Windows window styles. The app says *This style is not supported on this system*. |
 | HelixSR tab | The app sets HelixSR up with Windows tools (PowerShell, Direct3D 12), so the system check finds no usable card. |
 | Non-Steam `.exe` games | Started with plain `wine`, without Proton. Start them through Steam instead (add them to Steam as a non-Steam game). |
